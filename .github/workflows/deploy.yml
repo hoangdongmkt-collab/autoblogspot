@@ -1,0 +1,29 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_IP }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          script: |
+            cd ~/autoblogspot
+            git pull origin main
+            # Nếu bạn có sử dụng Virtual Environment (venv) trên VPS, bạn có thể bỏ comment các dòng dưới:
+            # source venv/bin/activate
+            # pip install -r requirements.txt
+            # Lệnh khởi động lại ứng dụng của bạn (ví dụ: systemctl, pm2 hoặc gunicorn):
+            # sudo systemctl restart autoblogspot.service || true
