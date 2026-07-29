@@ -164,7 +164,11 @@ class Project(Base):
     max_interval_minutes = Column(Integer, default=240)
     backlinks = Column(Text, default="[]")  # JSON array: [{"url": "...", "anchor": "..."}]
     custom_labels = Column(Text, default="[]")  # JSON array: ["Nhãn 1", "Nhãn 2"]
+    content_block = Column(Text, default="")  # HTML block injected into articles
+    content_block_position = Column(String(20), default="bottom")  # top/middle/bottom/random
     ai_model = Column(String(200), default="meta-llama/llama-3.1-8b-instruct:free")
+    project_type = Column(String(20), default="keyword")  # keyword / youtube
+    drive_folder_url = Column(Text, default="")  # Google Drive folder URL for project images
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -173,6 +177,7 @@ class Project(Base):
     clusters          = relationship("KeywordCluster", back_populates="project", cascade="all, delete-orphan")
     project_sites     = relationship("ProjectSite", back_populates="project", cascade="all, delete-orphan")
     articles          = relationship("Article", back_populates="project", cascade="all, delete-orphan")
+    youtube_sources   = relationship("YoutubeSource", back_populates="project", cascade="all, delete-orphan")
 
 
 class ProjectSite(Base):
@@ -205,18 +210,37 @@ class Keyword(Base):
     cluster = relationship("KeywordCluster", back_populates="keywords")
 
 
-class KeywordCluster(Base):
-    __tablename__ = "keyword_clusters"
-    id = Column(Integer, primary_key=True, index=True)
+class YoutubeSource(Base):
+    __tablename__ = "youtube_sources"
+    id         = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
-    cluster_name = Column(String(500))
-    intent_analysis = Column(Text)  # AI analysis result
-    status = Column(String(50), default="pending")  # pending/writing/completed
+    video_id   = Column(String(20), nullable=False)
+    url        = Column(String(500), default="")
+    title      = Column(String(500), default="")
+    author     = Column(String(200), default="")
+    status     = Column(String(20), default="pending")  # pending/processing/done/failed
+    transcript = Column(Text, default="")
+    error_message = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    project = relationship("Project", back_populates="clusters")
-    keywords = relationship("Keyword", back_populates="cluster")
-    articles = relationship("Article", back_populates="cluster")
+    project  = relationship("Project", back_populates="youtube_sources")
+    clusters = relationship("KeywordCluster", back_populates="youtube_source", cascade="all, delete-orphan")
+
+
+class KeywordCluster(Base):
+    __tablename__ = "keyword_clusters"
+    id         = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    cluster_name    = Column(String(500))
+    intent_analysis = Column(Text)  # AI analysis result / YouTube analysis JSON
+    status     = Column(String(50), default="pending")  # pending/writing/completed
+    youtube_source_id = Column(Integer, ForeignKey("youtube_sources.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    project        = relationship("Project", back_populates="clusters")
+    keywords       = relationship("Keyword", back_populates="cluster")
+    articles       = relationship("Article", back_populates="cluster")
+    youtube_source = relationship("YoutubeSource", back_populates="clusters")
 
 
 class Article(Base):
@@ -268,3 +292,20 @@ class IndexTask(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     article = relationship("Article", back_populates="index_task")
+
+
+class RecoveryTask(Base):
+    """Tracks articles submitted by user for content improvement + re-indexing."""
+    __tablename__ = "recovery_tasks"
+    id         = Column(Integer, primary_key=True, index=True)
+    user_id    = Column(Integer, ForeignKey("users.id"), nullable=False)
+    article_id = Column(Integer, ForeignKey("articles.id"), nullable=True)  # matched from URL
+    url        = Column(String(1000), nullable=False)
+    status     = Column(String(20), default="pending")
+    # pending → processing → done / failed / not_found
+    error_message = Column(Text)
+    created_at    = Column(DateTime, default=datetime.utcnow)
+    processed_at  = Column(DateTime)
+
+    user    = relationship("User")
+    article = relationship("Article")

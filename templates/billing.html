@@ -219,33 +219,60 @@
     </div>
   </div>
 
-  <!-- LemonSqueezy International -->
-  {% if ls_configured %}
+  <!-- PayPal International -->
+  {% if paypal_configured %}
   <div class="col-12">
     <div class="card shadow-sm border-0">
-      <div class="card-header fw-semibold border-0 bg-light">
-        <i class="bi bi-credit-card me-2 text-primary"></i>{{ _("bill_intl_payment_title") }}
-        <span class="badge bg-primary ms-2 small">{{ _("bill_intl_badge") }}</span>
+      <div class="card-header fw-semibold border-0 bg-light d-flex align-items-center gap-2">
+        <img src="https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_37x23.jpg"
+             alt="PayPal" height="20" class="rounded">
+        <span>PayPal — Thanh toán quốc tế</span>
+        <span class="badge bg-primary ms-1 small">Visa / Mastercard / PayPal</span>
+        <span class="badge bg-success ms-1 small">Tự động kích hoạt</span>
       </div>
       <div class="card-body">
-        <p class="text-muted small mb-3">{{ _("bill_intl_desc") }} <i class="bi bi-shield-check text-success me-1"></i>{{ _("bill_intl_powered_by") }}</p>
-        <div class="d-flex gap-2 flex-wrap">
-          {% if not (sub and sub.plan == 'pro') %}
-          <a href="/billing/checkout/pro" class="btn btn-outline-primary">
-            <i class="bi bi-arrow-up-circle me-2"></i>Pro — {{ ls_pro_price }}
-          </a>
-          {% endif %}
-          {% if not (sub and sub.plan == 'business') %}
-          <a href="/billing/checkout/business" class="btn btn-primary">
-            <i class="bi bi-star me-2"></i>Business — {{ ls_business_price }}
-          </a>
-          {% endif %}
-          {% if sub and sub.plan in ('pro', 'business') %}
-          <div class="alert alert-success py-2 mb-0 small">
-            <i class="bi bi-check-circle me-1"></i>{{ _("bill_already_on_plan") }} {{ sub.plan | capitalize }}
-          </div>
-          {% endif %}
+        <p class="text-muted small mb-3">
+          <i class="bi bi-shield-check text-success me-1"></i>
+          Thanh toán an toàn qua PayPal. Hỗ trợ thẻ Visa, Mastercard và tài khoản PayPal.
+        </p>
+
+        {% if sub and sub.plan in ('pro', 'business') %}
+        <div class="alert alert-success py-2 mb-0 small">
+          <i class="bi bi-check-circle me-1"></i>{{ _("bill_already_on_plan") }} {{ sub.plan | capitalize }}
         </div>
+        {% else %}
+        <div class="row g-3">
+          <div class="col-md-5">
+            <div class="mb-3">
+              <div class="text-muted small fw-semibold mb-2">1. Chọn gói</div>
+              <div class="btn-group w-100" role="group">
+                <input type="radio" class="btn-check" name="ppPlan" id="ppPlanPro" value="pro" checked>
+                <label class="btn btn-outline-primary" for="ppPlanPro">Pro — ${{ paypal_pro_price_usd }}/tháng</label>
+                <input type="radio" class="btn-check" name="ppPlan" id="ppPlanBiz" value="business">
+                <label class="btn btn-outline-warning" for="ppPlanBiz">Business — ${{ paypal_business_price_usd }}/tháng</label>
+              </div>
+            </div>
+            <div class="mb-3">
+              <div class="text-muted small fw-semibold mb-2">2. Chọn thời hạn</div>
+              <div class="btn-group w-100 flex-wrap" role="group">
+                {% for m in month_options %}
+                <input type="radio" class="btn-check" name="ppMonths" id="ppM{{ m }}" value="{{ m }}" {% if m == 1 %}checked{% endif %}>
+                <label class="btn btn-outline-secondary" for="ppM{{ m }}">{{ m }} tháng</label>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="bg-light rounded p-3 mb-3 small font-monospace">
+              Tổng: <strong id="ppTotal" class="text-primary">${{ paypal_pro_price_usd }}</strong>
+            </div>
+            <a id="ppCheckoutBtn" href="/billing/checkout/paypal/pro?months=1"
+               class="btn btn-warning fw-semibold w-100">
+              <img src="https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_37x23.jpg"
+                   alt="" height="16" class="me-2 rounded">
+              Thanh toán qua PayPal
+            </a>
+          </div>
+        </div>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -270,6 +297,31 @@
   document.querySelectorAll('input[name="vnPlan"], input[name="vnMonths"]')
     .forEach(el => el.addEventListener('change', update));
   update();
+})();
+</script>
+{% endif %}
+
+{% if paypal_configured %}
+<script>
+(function () {
+  const PRICES = {
+    pro:      parseFloat("{{ paypal_pro_price_usd }}"),
+    business: parseFloat("{{ paypal_business_price_usd }}"),
+  };
+
+  function updatePayPal() {
+    const plan   = document.querySelector('input[name="ppPlan"]:checked')?.value || 'pro';
+    const months = parseInt(document.querySelector('input[name="ppMonths"]:checked')?.value || '1');
+    const total  = (PRICES[plan] * months).toFixed(2);
+    const el = document.getElementById('ppTotal');
+    if (el) el.textContent = '$' + total;
+    const btn = document.getElementById('ppCheckoutBtn');
+    if (btn) btn.href = `/billing/checkout/paypal/${plan}?months=${months}`;
+  }
+
+  document.querySelectorAll('input[name="ppPlan"], input[name="ppMonths"]')
+    .forEach(el => el.addEventListener('change', updatePayPal));
+  updatePayPal();
 })();
 </script>
 {% endif %}

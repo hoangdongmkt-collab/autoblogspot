@@ -111,9 +111,32 @@
         </div>
       </div>
 
-      <!-- Keywords (chỉ hiển thị khi tạo mới) -->
+      <!-- Project Type Selector (chỉ khi tạo mới) -->
       {% if not project %}
       <div class="card shadow-sm mb-4">
+        <div class="card-header fw-semibold"><i class="bi bi-ui-radios me-1"></i>{{ _("projf_source_type") }}</div>
+        <div class="card-body">
+          <div class="d-flex gap-3">
+            <div class="form-check flex-fill">
+              <input class="form-check-input" type="radio" name="project_type" id="pt_keyword" value="keyword" checked onchange="switchProjectType('keyword')">
+              <label class="form-check-label fw-semibold" for="pt_keyword">
+                <i class="bi bi-tags me-1 text-primary"></i>{{ _("projf_type_keyword") }}
+              </label>
+              <div class="form-text">{{ _("projf_type_keyword_desc") }}</div>
+            </div>
+            <div class="form-check flex-fill">
+              <input class="form-check-input" type="radio" name="project_type" id="pt_youtube" value="youtube" onchange="switchProjectType('youtube')">
+              <label class="form-check-label fw-semibold" for="pt_youtube">
+                <i class="bi bi-youtube me-1 text-danger"></i>{{ _("projf_type_youtube") }}
+              </label>
+              <div class="form-text">{{ _("projf_type_youtube_desc") }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Keyword Source Panel -->
+      <div id="panel-keyword" class="card shadow-sm mb-4">
         <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
           <span><i class="bi bi-tags me-1"></i>{{ _("projf_keywords") }}</span>
           <a href="/projects/clusters-template" class="btn btn-sm btn-outline-success" download>
@@ -121,9 +144,7 @@
           </a>
         </div>
         <div class="card-body">
-
-          <!-- Tab chọn phương thức -->
-          <ul class="nav nav-tabs mb-3" id="kwMethodTabs">
+          <ul class="nav nav-tabs mb-3">
             <li class="nav-item">
               <button class="nav-link active" id="tab-manual-btn" type="button" onclick="switchKwTab('manual')">
                 <i class="bi bi-keyboard me-1"></i>Nhập từ khóa (AI tự chia)
@@ -135,8 +156,6 @@
               </button>
             </li>
           </ul>
-
-          <!-- Tab 1: nhập thủ công -->
           <div id="tab-manual">
             <textarea name="keywords_text" id="keywords_text" class="form-control font-monospace" rows="10"
               placeholder="cách giảm cân nhanh&#10;thực phẩm tốt cho tim&#10;bài tập buổi sáng&#10;..."
@@ -148,38 +167,40 @@
             <div class="alert alert-warning d-flex gap-2 align-items-start py-2 px-3" style="border-left:4px solid #f59e0b;">
               <i class="bi bi-exclamation-triangle-fill text-warning mt-1 flex-shrink-0"></i>
               <div class="small">
-                <strong>Lưu ý:</strong> Hệ thống chia nhóm <strong>60 từ khóa mỗi 10 phút</strong>. Nhập càng nhiều từ khóa, chiến dịch càng mất nhiều thời gian để bắt đầu tạo bài viết.<br>
-                <span class="text-muted">Ví dụ: 180 từ khóa → ~30 phút để chia xong nhóm.</span>
-              </div>
-            </div>
-            <div id="kw-guide" class="p-2 rounded small" style="background:#f8f9fa;border:1px solid #dee2e6;">
-              <div class="d-flex gap-3 flex-wrap mb-1">
-                <span><span class="badge bg-success">Tối ưu</span> 10–60 từ khóa</span>
-                <span><span class="badge bg-primary">Tốt</span> 60–200 từ khóa</span>
-                <span><span class="badge bg-warning text-dark">Chấp nhận</span> 200–500 từ khóa</span>
-              </div>
-              <div class="text-muted" style="font-size:0.78rem;">
-                <i class="bi bi-info-circle me-1"></i>AI chia nhóm: mỗi nhóm gồm 1 từ khóa chính + 0–5 từ khóa phụ liên quan = 1 bài viết.
+                <strong>Lưu ý:</strong> Hệ thống chia nhóm <strong>60 từ khóa mỗi 10 phút</strong>. Nhập càng nhiều từ khóa, chiến dịch càng mất nhiều thời gian để bắt đầu tạo bài viết.
               </div>
             </div>
           </div>
-
-          <!-- Tab 2: upload Excel -->
           <div id="tab-excel" style="display:none;">
             <div class="alert alert-success d-flex gap-2 align-items-start py-2 px-3 mb-3">
               <i class="bi bi-rocket-takeoff-fill text-success mt-1 flex-shrink-0"></i>
-              <div class="small">
-                <strong>Bắt đầu ngay lập tức!</strong> Upload file Excel nhóm từ khóa đã chia sẵn → chiến dịch bắt đầu viết bài <strong>ngay</strong>, không cần chờ AI phân nhóm 10 phút/lô.
-              </div>
+              <div class="small"><strong>Bắt đầu ngay lập tức!</strong> Upload file Excel → chiến dịch bắt đầu viết bài ngay.</div>
             </div>
             <input type="file" name="clusters_file" id="clusters_file" class="form-control mb-2" accept=".xlsx,.xls">
-            <div class="text-muted small">
-              <i class="bi bi-info-circle me-1"></i>Chưa có file mẫu? <a href="/projects/clusters-template" download>Tải file mẫu tại đây</a>.
-            </div>
+            <div class="text-muted small"><i class="bi bi-info-circle me-1"></i><a href="/projects/clusters-template" download>Tải file mẫu</a></div>
           </div>
-
         </div>
       </div>
+
+      <!-- YouTube Source Panel -->
+      <div id="panel-youtube" class="card shadow-sm mb-4" style="display:none;">
+        <div class="card-header fw-semibold">
+          <i class="bi bi-youtube me-1 text-danger"></i>{{ _("projf_yt_urls_label") }}
+        </div>
+        <div class="card-body">
+          <textarea name="youtube_urls_text" id="youtube_urls_text" class="form-control font-monospace small" rows="10"
+            placeholder="{{ _('projf_yt_urls_placeholder') }}"
+            oninput="countYoutubeUrls()"></textarea>
+          <div class="d-flex justify-content-between align-items-center mt-1 mb-2">
+            <span id="yt-badge" class="badge bg-danger">0 video</span>
+          </div>
+          <div class="alert alert-info d-flex gap-2 py-2 px-3 small mt-2">
+            <i class="bi bi-info-circle-fill text-info flex-shrink-0 mt-1"></i>
+            <div>{{ _("projf_yt_info") }}</div>
+          </div>
+        </div>
+      </div>
+
       {% else %}
       <div class="alert alert-info small">
         <i class="bi bi-info-circle me-1"></i>
@@ -297,6 +318,68 @@
             <span class="text-primary fw-semibold">Spin anchor text:</span>
             dùng <code>{A|B|C|D}</code> để đa dạng anchor — mỗi bài tự động chọn 1 từ.<br>
             <span class="text-muted">VD: <code>{ghế công viên|ghế ngoài trời|ghế sân vườn|ghế gỗ đẹp}</code></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Google Drive Images -->
+      <div class="card shadow-sm mb-4">
+        <div class="card-header fw-semibold">
+          <i class="bi bi-google me-1 text-primary"></i>{{ _("projf_drive_title") }}
+        </div>
+        <div class="card-body">
+          <input type="text" name="drive_folder_url" class="form-control form-control-sm font-monospace"
+            value="{{ project.drive_folder_url if project and project.drive_folder_url else '' }}"
+            placeholder="https://drive.google.com/drive/folders/...">
+          <div class="form-text mt-1">{{ _("projf_drive_hint") }}</div>
+          <div class="alert alert-info py-2 px-3 small mt-2 mb-0">
+            <i class="bi bi-info-circle me-1"></i>
+            {{ _("projf_drive_info") }}
+          </div>
+        </div>
+      </div>
+
+      <!-- Content Block -->
+      <div class="card shadow-sm mb-4">
+        <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-layout-text-window me-1"></i>{{ _("projf_content_block") }}</span>
+          <button type="button" class="btn btn-xs btn-outline-secondary" onclick="toggleBlockPreview()">
+            <i class="bi bi-eye me-1"></i>Preview
+          </button>
+        </div>
+        <div class="card-body">
+          <div class="mb-3">
+            <textarea name="content_block" id="content_block" class="form-control font-monospace small"
+              rows="6" placeholder="{{ _('projf_content_block_placeholder') }}">{{ project.content_block if project and project.content_block else '' }}</textarea>
+            <div class="form-text">{{ _("projf_content_block_hint") }}</div>
+          </div>
+          <!-- Preview box -->
+          <div id="block-preview" class="border rounded p-3 bg-dark mb-3" style="display:none;min-height:60px;">
+            <div class="text-muted small mb-2">👁 Preview:</div>
+            <div id="block-preview-content"></div>
+          </div>
+          <!-- Position selector -->
+          <div>
+            <label class="form-label small fw-semibold mb-2">{{ _("projf_content_block_position") }}</label>
+            <div class="d-flex gap-3 flex-wrap">
+              {% set cb_pos = project.content_block_position if project and project.content_block_position else 'bottom' %}
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="content_block_position" id="cbp_top" value="top" {{ 'checked' if cb_pos == 'top' else '' }}>
+                <label class="form-check-label" for="cbp_top"><i class="bi bi-arrow-up-circle me-1 text-info"></i>{{ _("projf_cbp_top") }}</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="content_block_position" id="cbp_middle" value="middle" {{ 'checked' if cb_pos == 'middle' else '' }}>
+                <label class="form-check-label" for="cbp_middle"><i class="bi bi-distribute-vertical me-1 text-warning"></i>{{ _("projf_cbp_middle") }}</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="content_block_position" id="cbp_bottom" value="bottom" {{ 'checked' if cb_pos == 'bottom' else '' }}>
+                <label class="form-check-label" for="cbp_bottom"><i class="bi bi-arrow-down-circle me-1 text-success"></i>{{ _("projf_cbp_bottom") }}</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="content_block_position" id="cbp_random" value="random" {{ 'checked' if cb_pos == 'random' else '' }}>
+                <label class="form-check-label" for="cbp_random"><i class="bi bi-shuffle me-1 text-primary"></i>{{ _("projf_cbp_random") }}</label>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -452,6 +535,33 @@ function updateSiteCount() {
     });
   });
 })();
+
+function switchProjectType(type) {
+  const kw = document.getElementById('panel-keyword');
+  const yt = document.getElementById('panel-youtube');
+  if (kw) kw.style.display = type === 'keyword' ? '' : 'none';
+  if (yt) yt.style.display = type === 'youtube' ? '' : 'none';
+}
+
+function countYoutubeUrls() {
+  const ta = document.getElementById('youtube_urls_text');
+  const badge = document.getElementById('yt-badge');
+  if (!ta || !badge) return;
+  const lines = ta.value.split('\n').filter(l => l.trim().length > 0);
+  badge.textContent = lines.length + ' video';
+}
+
+function toggleBlockPreview() {
+  const box = document.getElementById('block-preview');
+  const content = document.getElementById('block-preview-content');
+  const html = document.getElementById('content_block').value.trim();
+  if (box.style.display === 'none') {
+    content.innerHTML = html || '<span class="text-muted">Chưa có nội dung</span>';
+    box.style.display = '';
+  } else {
+    box.style.display = 'none';
+  }
+}
 
 let backlinkCount = 0;
 

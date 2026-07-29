@@ -16,12 +16,12 @@
   {% if GSC_VERIFY %}<meta name="google-site-verification" content="{{ GSC_VERIFY }}">{% endif %}
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://autoblogspot.com/blog">
-  <meta property="og:title" content="{{ _("blog_hero_title") }} — AutoBlogspot">
+  <meta property="og:title" content="{{ _("blog_page_title") }}">
   <meta property="og:description" content="{{ _("blog_page_desc") }}">
   <meta property="og:image" content="https://autoblogspot.com/static/img/og-default.png">
-  <meta property="og:locale" content="vi_VN">
+  <meta property="og:locale" content="{% if get_lang() == 'en' %}en_US{% elif get_lang() == 'fr' %}fr_FR{% elif get_lang() == 'it' %}it_IT{% else %}vi_VN{% endif %}">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="{{ _("blog_hero_title") }} — AutoBlogspot">
+  <meta name="twitter:title" content="{{ _("blog_page_title") }}">
   <meta name="twitter:description" content="{{ _("blog_page_desc") }}">
   <meta name="twitter:image" content="https://autoblogspot.com/static/img/og-default.png">
   {% if GA_ID %}

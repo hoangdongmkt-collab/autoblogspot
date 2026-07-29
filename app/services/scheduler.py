@@ -13,8 +13,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..database import SessionLocal
-from ..models import Project, ProjectSite, KeywordCluster, Article, IndexTask, BlogspotSite, GoogleAccount, PlatformAccount
-from . import openrouter, blogger, wordpress, tumblr, hashnode, sinbyte, index_checker, image_service, agent_service, wordpress_selfhosted as wp_sh, index_push
+from ..models import Project, ProjectSite, KeywordCluster, Article, IndexTask, BlogspotSite, GoogleAccount, PlatformAccount, YoutubeSource, RecoveryTask
+from . import openrouter, blogger, wordpress, tumblr, hashnode, sinbyte, index_checker, image_service, agent_service, wordpress_selfhosted as wp_sh, index_push, youtube_service
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,32 @@ def _release_project_lock(db: Session, lock_class: int, project_id: int) -> None
         )
     except Exception:
         pass
+
+
+def _inject_content_block(content: str, block: str, position: str) -> str:
+    """Inject a custom HTML block into article content at the specified position."""
+    if not block or not block.strip():
+        return content
+    wrapped = f'\n<div class="content-block">\n{block}\n</div>\n'
+    if position == "top":
+        return wrapped + content
+    if position == "bottom":
+        return content + wrapped
+    if position == "middle":
+        # Insert after the 2nd </h2> heading, or at ~50% character position
+        import re
+        headings = [m.end() for m in re.finditer(r'</h[23]>', content, re.IGNORECASE)]
+        if len(headings) >= 2:
+            mid = headings[1]
+        elif len(headings) == 1:
+            mid = headings[0]
+        else:
+            mid = len(content) // 2
+        return content[:mid] + wrapped + content[mid:]
+    # random
+    import random as _rand
+    pos = _rand.choice(["top", "middle", "bottom"])
+    return _inject_content_block(content, block, pos)
 
 
 def _inject_schema_markup(content: str, schema_markup_json: str) -> str:
@@ -236,40 +262,57 @@ def _write_single_article(db: Session, article: Article) -> None:
     # Nếu pool rỗng (chưa cấu hình provider nào) → dùng project.ai_model.
     ai_model = openrouter.pick_rotation_model(db, user_id=user_id) or project.ai_model
 
-    # ── Bước 0: Research Brief ────────────────────────────────────────────────
-    # Cache per cluster: nếu đã có research (JSON) cho cluster này thì tái dùng,
-    # tránh gọi AI thêm lần nữa cho các bài cùng cluster (ví dụ nhiều site).
+    # ── Bước 0: Research Brief / YouTube Context ──────────────────────────────
     research_brief = None
+    youtube_context = None
     fresh_cluster = db.get(KeywordCluster, cluster_id)
-    if fresh_cluster and fresh_cluster.intent_analysis:
-        try:
-            cached = json.loads(fresh_cluster.intent_analysis)
-            if isinstance(cached, dict) and "intent_type" in cached:
-                research_brief = cached
-                logger.info(f"Cluster {cluster_id}: reusing cached research brief")
-        except (json.JSONDecodeError, TypeError, ValueError):
-            pass  # old plain-text format → sẽ research lại
 
-    if research_brief is None:
-        try:
-            research_brief = openrouter.analyze_search_intent_and_research(
-                db=db,
-                keywords=keywords,
-                cluster_name=cluster.cluster_name,
-                language=language,
-                model=ai_model,
-                user_id=user_id,
-            )
-            # Lưu cache vào cluster để các bài cùng cluster tái dùng
-            c = db.get(KeywordCluster, cluster_id)
-            if c and c.intent_analysis is None:
-                c.intent_analysis = json.dumps(research_brief, ensure_ascii=False)
-                db.commit()
-            logger.info(f"Cluster {cluster_id}: research brief generated OK")
-        except Exception as exc:
-            logger.warning(f"Cluster {cluster_id}: research brief failed ({exc}), writing without it")
+    # Check if this cluster came from a YouTube source
+    if fresh_cluster and fresh_cluster.youtube_source_id:
+        yt_src = db.get(YoutubeSource, fresh_cluster.youtube_source_id)
+        if yt_src:
+            analysis = {}
+            try:
+                analysis = json.loads(fresh_cluster.intent_analysis or "{}")
+            except Exception:
+                pass
+            youtube_context = {
+                "video_title": yt_src.title,
+                "transcript":  yt_src.transcript or "",
+                "embed_html":  youtube_service.get_video_embed_html(yt_src.video_id),
+                "outline":     analysis.get("outline", []),
+            }
+            logger.info(f"Cluster {cluster_id}: using YouTube context from video {yt_src.video_id}")
+    else:
+        # Standard keyword-based: use research brief cache
+        if fresh_cluster and fresh_cluster.intent_analysis:
+            try:
+                cached = json.loads(fresh_cluster.intent_analysis)
+                if isinstance(cached, dict) and "intent_type" in cached:
+                    research_brief = cached
+                    logger.info(f"Cluster {cluster_id}: reusing cached research brief")
+            except (json.JSONDecodeError, TypeError, ValueError):
+                pass
 
-    # ── Bước 1: Viết bài với research context ─────────────────────────────────
+        if research_brief is None:
+            try:
+                research_brief = openrouter.analyze_search_intent_and_research(
+                    db=db,
+                    keywords=keywords,
+                    cluster_name=cluster.cluster_name,
+                    language=language,
+                    model=ai_model,
+                    user_id=user_id,
+                )
+                c = db.get(KeywordCluster, cluster_id)
+                if c and c.intent_analysis is None:
+                    c.intent_analysis = json.dumps(research_brief, ensure_ascii=False)
+                    db.commit()
+                logger.info(f"Cluster {cluster_id}: research brief generated OK")
+            except Exception as exc:
+                logger.warning(f"Cluster {cluster_id}: research brief failed ({exc}), writing without it")
+
+    # ── Bước 1: Viết bài ──────────────────────────────────────────────────────
     result = openrouter.analyze_intent_and_write_article(
         db=db,
         keywords=keywords,
@@ -282,6 +325,7 @@ def _write_single_article(db: Session, article: Article) -> None:
         author_persona={"name": author.name, "bio": author.bio, "writing_style": author.writing_style} if author else None,
         content_angle={"name": angle.name, "description": angle.description} if angle else None,
         research_brief=research_brief,
+        youtube_context=youtube_context,
         user_id=user_id,
     )
 
@@ -309,8 +353,12 @@ def _write_single_article(db: Session, article: Article) -> None:
     _validate_article(title, processed)
 
     # Chèn ảnh vào bài viết (HTTP call, không cần DB lock)
-    pixabay_key = openrouter.get_setting(db, "pixabay_api_key", user_id=user_id)
-    imgbb_key   = openrouter.get_setting(db, "imgbb_api_key",   user_id=user_id)
+    pixabay_key      = openrouter.get_setting(db, "pixabay_api_key", user_id=user_id)
+    imgbb_key        = openrouter.get_setting(db, "imgbb_api_key",   user_id=user_id)
+    google_api_key   = openrouter.get_setting(db, "youtube_api_key", user_id=user_id) or ""
+    # Drive folder: per-project setting (requires fresh load after earlier commits)
+    _fresh_project   = db.get(type(project), project.id)
+    drive_folder_url = (getattr(_fresh_project, "drive_folder_url", "") or "") if _fresh_project else ""
     final_content = image_service.insert_images_into_content(
         content=processed,
         title=title,
@@ -318,6 +366,9 @@ def _write_single_article(db: Session, article: Article) -> None:
         image_queries=result.get("image_queries", []),
         pixabay_api_key=pixabay_key,
         imgbb_api_key=imgbb_key,
+        drive_folder_url=drive_folder_url,
+        google_api_key=google_api_key,
+        keywords=keywords,
     )
 
     # ── Ghi kết quả vào DB — write lock ngắn ─────────────────────────────────
@@ -476,6 +527,10 @@ def _publish_article(db: Session, project, ps, article) -> None:
 
     # Inject GEO/AIO JSON-LD schema vào đầu content trước khi publish
     publish_content = _inject_schema_markup(article.content, article.schema_markup)
+    # Inject custom content block (địa chỉ, banner, YouTube embed, v.v.)
+    cb = getattr(project, "content_block", "") or ""
+    cb_pos = getattr(project, "content_block_position", "bottom") or "bottom"
+    publish_content = _inject_content_block(publish_content, cb, cb_pos)
 
     if platform == "blogspot":
         account = db.query(GoogleAccount).filter(GoogleAccount.id == site.account_id).first()
@@ -765,7 +820,7 @@ def submit_new_urls_to_sinbyte():
             for task in user_tasks:
                 task.status = "submitted"
                 task.submitted_at = now
-                task.next_check_at = now + timedelta(hours=24)
+                task.next_check_at = now + timedelta(hours=72)  # check sau 3 ngày
                 if task_id:
                     task.sinbyte_task_id = task_id
                     task.sinbyte_submitted_count = 1
@@ -852,32 +907,292 @@ def check_system_health():
         db.close()
 
 
+# ─── Recovery: Improve unindexed articles ────────────────────────────────────
+
+def process_recovery_tasks():
+    """
+    Process pending RecoveryTask records:
+    1. Match URL → Article in DB
+    2. AI improves content (not rewrite — keeps 65%+ original)
+    3. Push updated content to platform
+    4. Re-submit URL for indexing
+    """
+    db = get_db()
+    try:
+        pending = (
+            db.query(RecoveryTask)
+            .filter(RecoveryTask.status == "pending")
+            .limit(3)  # process 3 at a time to avoid overload
+            .all()
+        )
+        if not pending:
+            return
+
+        for task in pending:
+            try:
+                task.status = "processing"
+                db.commit()
+
+                # 1. Find matching Article by URL
+                article = (
+                    db.query(Article)
+                    .filter(Article.url == task.url, Article.status == "published")
+                    .first()
+                )
+                if not article:
+                    # Try partial match (URL might have trailing slash differences)
+                    url_stripped = task.url.rstrip("/")
+                    article = (
+                        db.query(Article)
+                        .filter(
+                            Article.url.like(f"{url_stripped}%"),
+                            Article.status == "published",
+                        )
+                        .first()
+                    )
+
+                if not article:
+                    task.status = "not_found"
+                    task.error_message = "URL không tìm thấy trong hệ thống (bài chưa được đăng qua AutoBlogspot)"
+                    db.commit()
+                    logger.warning("RecoveryTask %d: article not found for %s", task.id, task.url)
+                    continue
+
+                task.article_id = article.id
+                db.commit()
+
+                if not article.content:
+                    task.status = "failed"
+                    task.error_message = "Bài viết không có nội dung trong DB"
+                    db.commit()
+                    continue
+
+                project = article.project
+                user_id = project.user_id if project else task.user_id
+                ai_model = openrouter.pick_rotation_model(db, user_id=user_id) or (project.ai_model if project else "")
+
+                # 2. Get keywords from cluster
+                keywords = []
+                if article.cluster:
+                    keywords = [kw.keyword for kw in article.cluster.keywords]
+
+                # 3. AI improve content
+                improved_content = openrouter.improve_article_for_indexing(
+                    db=db,
+                    original_html=article.content,
+                    keywords=keywords,
+                    language=article.language or "vi",
+                    model=ai_model,
+                    user_id=user_id,
+                )
+
+                # 4. Update content in DB
+                article.content = improved_content
+                article.updated_at = datetime.utcnow()
+                db.commit()
+
+                # 5. Push update to platform
+                site = article.site
+                platform = getattr(site, "platform", None) or "blogspot"
+                try:
+                    if platform == "blogspot" and article.blogger_post_id:
+                        account = db.query(GoogleAccount).filter(GoogleAccount.id == site.account_id).first()
+                        if account:
+                            blogger.update_post(
+                                db=db, account=account, blog_id=site.blog_id,
+                                post_id=article.blogger_post_id,
+                                title=article.title, content=improved_content,
+                            )
+                    elif platform == "wordpress" and article.blogger_post_id:
+                        pa = db.query(PlatformAccount).filter(PlatformAccount.id == site.platform_account_id).first()
+                        if pa:
+                            wordpress.update_post(pa.access_token, site.blog_id,
+                                                  article.blogger_post_id, article.title, improved_content)
+                    elif platform == "tumblr" and article.blogger_post_id:
+                        pa = db.query(PlatformAccount).filter(PlatformAccount.id == site.platform_account_id).first()
+                        if pa:
+                            token = tumblr.refresh_access_token(db, pa)
+                            tumblr.update_post(token, site.blog_id,
+                                               article.blogger_post_id, article.title, improved_content)
+                    elif platform == "hashnode" and article.blogger_post_id:
+                        pa = db.query(PlatformAccount).filter(PlatformAccount.id == site.platform_account_id).first()
+                        if pa:
+                            hashnode.update_post(pa.access_token, article.blogger_post_id,
+                                                 article.title, improved_content)
+                    elif platform == "wordpress_selfhosted" and article.blogger_post_id:
+                        pa = db.query(PlatformAccount).filter(PlatformAccount.id == site.platform_account_id).first()
+                        if pa:
+                            wp_sh.update_post(pa.refresh_token, pa.name, pa.access_token,
+                                              article.blogger_post_id, article.title, improved_content)
+                    logger.info("RecoveryTask %d: updated on platform [%s]: %s", task.id, platform, task.url)
+                except Exception as platform_err:
+                    logger.warning("RecoveryTask %d: platform update failed (%s), content saved in DB", task.id, platform_err)
+
+                # 6. Re-submit for indexing
+                try:
+                    index_push.push_all(
+                        url=task.url, db=db, user_id=user_id,
+                        platform=platform, blog_name=site.blog_name or "",
+                    )
+                except Exception as push_err:
+                    logger.warning("RecoveryTask %d: index push failed: %s", task.id, push_err)
+
+                task.status = "done"
+                task.processed_at = datetime.utcnow()
+                db.commit()
+                logger.info("RecoveryTask %d done: %s", task.id, task.url)
+
+            except Exception as e:
+                logger.error("RecoveryTask %d failed: %s", task.id, e)
+                task.status = "failed"
+                task.error_message = str(e)[:500]
+                task.processed_at = datetime.utcnow()
+                try:
+                    db.commit()
+                except Exception:
+                    db.rollback()
+    finally:
+        db.close()
+
+
+# ─── YouTube Source Processing ───────────────────────────────────────────────
+
+def process_youtube_sources():
+    """
+    Process pending YoutubeSource records:
+    1. Fetch transcript + metadata
+    2. AI analyze → find best keyword + article outline
+    3. Create KeywordCluster + Article records
+    4. Existing publishing pipeline takes over from there
+    """
+    from ..models import Keyword
+    db = get_db()
+    try:
+        pending = (
+            db.query(YoutubeSource)
+            .filter(YoutubeSource.status == "pending")
+            .limit(3)
+            .all()
+        )
+        if not pending:
+            return
+
+        for src in pending:
+            try:
+                src.status = "processing"
+                db.commit()
+
+                project = src.project
+                if not project:
+                    src.status = "failed"
+                    src.error_message = "Project not found"
+                    db.commit()
+                    continue
+
+                user_id = project.user_id
+
+                # 1. Metadata (title via oEmbed)
+                if not src.title:
+                    meta = youtube_service.get_video_metadata(src.video_id)
+                    src.title  = meta.get("title", "") or src.url
+                    src.author = meta.get("author", "")
+                    db.commit()
+
+                # 2. Transcript
+                transcript = youtube_service.get_video_transcript(src.video_id)
+                src.transcript = transcript[:60000]
+                db.commit()
+
+                # 3. AI analyze
+                ai_model = project.ai_model
+                analysis = openrouter.analyze_youtube_for_article(
+                    db=db,
+                    video_title=src.title,
+                    transcript=transcript,
+                    author=src.author,
+                    model=ai_model,
+                    user_id=user_id,
+                )
+
+                main_kw = analysis.get("main_keyword") or src.title[:80]
+
+                # 4. Create KeywordCluster
+                cluster = KeywordCluster(
+                    project_id=project.id,
+                    cluster_name=analysis.get("article_title") or main_kw,
+                    status="pending",
+                    youtube_source_id=src.id,
+                    intent_analysis=json.dumps(analysis, ensure_ascii=False),
+                )
+                db.add(cluster)
+                db.flush()
+
+                # 5. Add keywords (primary + secondary)
+                all_kws = [main_kw] + (analysis.get("secondary_keywords") or [])[:5]
+                for kw_text in all_kws:
+                    db.add(Keyword(
+                        project_id=project.id,
+                        keyword=kw_text,
+                        status="clustered",
+                        cluster_id=cluster.id,
+                    ))
+
+                # 6. Create Article per project site
+                for ps in project.project_sites:
+                    db.add(Article(
+                        cluster_id=cluster.id,
+                        site_id=ps.site_id,
+                        project_id=project.id,
+                        language=ps.language,
+                        status="pending",
+                    ))
+
+                src.status = "done"
+                db.commit()
+                logger.info(
+                    "YouTube source %d processed: video=%s keyword='%s'",
+                    src.id, src.video_id, main_kw,
+                )
+
+            except Exception as e:
+                logger.error("YouTube source %d failed: %s", src.id, e)
+                src.status = "failed"
+                src.error_message = str(e)[:500]
+                try:
+                    db.commit()
+                except Exception:
+                    db.rollback()
+    finally:
+        db.close()
+
+
 # ─── Index Checking ───────────────────────────────────────────────────────────
 #
-# Flow:
-#   published → [submit Sinbyte] → submitted (next_check +24h)
-#     ├─ indexed → status=indexed (next_check +5d monitoring)
-#     │     ├─ still indexed → next_check=None (done)
-#     │     └─ lost index   → rewrite + resubmit → submitted (next_check +24h, was_indexed=True)
-#     │           ├─ indexed → status=indexed (continue monitoring)
-#     │           └─ not indexed → skipped
-#     └─ not indexed (check_count=1) → resubmit → submitted (next_check +24h)
-#           └─ not indexed (check_count=2) → rewrite + resubmit → submitted (next_check +24h)
-#                 └─ not indexed (check_count=3) → skipped
+# Flow đơn giản:
+#   published → [push IndexNow/Sitemap/RPC/Sinbyte — 1 LẦN DUY NHẤT]
+#             → submitted (next_check +72h / 3 ngày)
+#     ├─ True  (confirmed indexed) → status=indexed (done)
+#     ├─ False (confirmed NOT indexed) → status=skipped (done)
+#     └─ None  (Google blocked / CAPTCHA) → retry check +24h, tối đa 3 lần → skipped
 
 def check_index_status():
-    """Check index status — handles submitted (24h cycle) and indexed (5d monitoring)."""
+    """
+    Check index status sau 3 ngày.
+    - True  → indexed (done)
+    - False → skipped (done, không gửi lại)
+    - None  → Google block → retry check 24h, tối đa 3 lần → skipped
+    """
     db = get_db()
     try:
         now = datetime.utcnow()
         due_tasks = (
             db.query(IndexTask)
             .filter(
-                IndexTask.status.in_(["submitted", "indexed"]),
+                IndexTask.status == "submitted",
                 IndexTask.next_check_at <= now,
                 IndexTask.next_check_at.isnot(None),
             )
-            .limit(10)  # max 10 per run to avoid Google blocking
+            .limit(10)  # max 10 per run to avoid Google rate limit
             .all()
         )
 
@@ -886,12 +1201,37 @@ def check_index_status():
                 proxy_url = openrouter.get_setting(db, "dataimpulse_proxy_url")
                 is_indexed = index_checker.check_google_index(task.url, proxy_url=proxy_url or None)
                 task.last_checked_at = datetime.utcnow()
+                task.check_count = (task.check_count or 0) + 1
 
-                if task.status == "submitted":
-                    task.check_count = (task.check_count or 0) + 1
-                    _handle_submitted_check(db, task, is_indexed)
-                elif task.status == "indexed":
-                    _handle_indexed_monitoring(db, task, is_indexed)
+                if is_indexed is True:
+                    # Xác nhận đã được index
+                    task.status = "indexed"
+                    task.was_indexed = True
+                    task.next_check_at = None
+                    logger.info(f"Indexed OK: {task.url}")
+                    if task.article:
+                        agent_service.update_feedback(db, task.article, indexed=True)
+
+                elif is_indexed is False:
+                    # Xác nhận chưa được index sau 3 ngày — dừng theo dõi
+                    task.status = "skipped"
+                    task.next_check_at = None
+                    logger.info(f"Not indexed after 3d — skipped: {task.url}")
+                    if task.article:
+                        agent_service.update_feedback(db, task.article, indexed=False)
+
+                else:
+                    # None = Google block / CAPTCHA — không rõ trạng thái
+                    # Retry check sau 24h, tối đa 3 lần, sau đó skipped
+                    if task.check_count >= 3:
+                        task.status = "skipped"
+                        task.next_check_at = None
+                        logger.warning(f"Google blocked 3 lần, dừng check: {task.url}")
+                    else:
+                        task.next_check_at = datetime.utcnow() + timedelta(hours=24)
+                        logger.warning(
+                            f"Google blocked (lần {task.check_count}), retry sau 24h: {task.url}"
+                        )
 
                 db.commit()
             except Exception as e:
@@ -899,145 +1239,6 @@ def check_index_status():
 
     finally:
         db.close()
-
-
-def _handle_submitted_check(db: Session, task: IndexTask, is_indexed: bool):
-    """24h-cycle check for status='submitted'."""
-    if is_indexed:
-        task.status = "indexed"
-        task.was_indexed = True
-        task.next_check_at = datetime.utcnow() + timedelta(days=5)
-        task.check_count = 0  # reset counter for monitoring phase
-        logger.info(f"Indexed: {task.url}")
-        if task.article:
-            agent_service.update_feedback(db, task.article, indexed=True)
-        return
-
-    # Not indexed
-    check_count = task.check_count or 0
-
-    if task.was_indexed:
-        # Recovery attempt after losing index — only 1 chance
-        task.status = "skipped"
-        task.next_check_at = None
-        logger.info(f"Lost index — not recovered after retry, skipping: {task.url}")
-        return
-
-    if check_count == 1:
-        # 1st fail → resubmit, check again in 24h
-        _resubmit_to_sinbyte(db, task)
-        task.next_check_at = datetime.utcnow() + timedelta(hours=24)
-        logger.info(f"Not indexed (check 1), resubmitting: {task.url}")
-
-    elif check_count == 2:
-        # 2nd fail → rewrite article + resubmit, check again in 24h
-        _rewrite_article_for_task(db, task)
-        _resubmit_to_sinbyte(db, task)
-        task.next_check_at = datetime.utcnow() + timedelta(hours=24)
-        if task.article:
-            agent_service.update_feedback(db, task.article, indexed=False)
-        logger.info(f"Not indexed (check 2), rewriting + resubmitting: {task.url}")
-
-    else:
-        # 3rd fail → give up
-        task.status = "skipped"
-        task.next_check_at = None
-        logger.info(f"Not indexed after {check_count} checks, skipping: {task.url}")
-
-
-def _handle_indexed_monitoring(db: Session, task: IndexTask, is_indexed: bool):
-    """5-day monitoring check for status='indexed'."""
-    if is_indexed:
-        # Confirmed still indexed — monitoring complete, no more checks
-        task.next_check_at = None
-        logger.info(f"Still indexed at 5d monitoring: {task.url}")
-    else:
-        # Lost index → rewrite, resubmit, check again in 24h
-        task.was_indexed = True
-        task.check_count = 0  # reset for this recovery cycle
-        task.status = "submitted"
-        task.next_check_at = datetime.utcnow() + timedelta(hours=24)
-        _rewrite_article_for_task(db, task)
-        _resubmit_to_sinbyte(db, task)
-        logger.info(f"Lost index at 5d monitoring, rewriting + resubmitting: {task.url}")
-
-
-def _resubmit_to_sinbyte(db: Session, task: IndexTask):
-    try:
-        uid = task.article.project.user_id if task.article and task.article.project else None
-        task_name = f"Retry-{datetime.utcnow().strftime('%Y%m%d')}"
-        result = sinbyte.submit_urls(db, task_name, [task.url], user_id=uid)
-        task.sinbyte_task_id = str(result.get("id", task.sinbyte_task_id))
-        task.sinbyte_submitted_count += 1
-        task.submitted_at = datetime.utcnow()
-    except Exception as e:
-        logger.error(f"Error resubmitting to Sinbyte: {e}")
-
-
-def _rewrite_article_for_task(db: Session, task: IndexTask):
-    try:
-        article = task.article
-        if not article or not article.cluster:
-            return
-
-        keywords = [kw.keyword for kw in article.cluster.keywords]
-        backlinks = [
-            {**bl, "anchor": _spin(bl["anchor"])} if bl.get("anchor") else bl
-            for bl in json.loads(article.project.backlinks or "[]")
-        ]
-
-        result = openrouter.rewrite_article(
-            db=db,
-            title=article.title,
-            keywords=keywords,
-            language=article.language,
-            backlinks=backlinks,
-            model=article.project.ai_model,
-            user_id=article.project.user_id,
-        )
-
-        # Update article content
-        old_title = article.title
-        article.title = result["title"]
-        article.content = result["content"]
-        article.updated_at = datetime.utcnow()
-        db.commit()
-
-        # Update bài trên platform tương ứng
-        site     = article.site
-        platform = getattr(site, "platform", None) or "blogspot"
-        if article.blogger_post_id:
-            if platform == "blogspot":
-                account = db.query(GoogleAccount).filter(GoogleAccount.id == site.account_id).first()
-                if account:
-                    blogger.update_post(db=db, account=account, blog_id=site.blog_id,
-                                        post_id=article.blogger_post_id,
-                                        title=article.title, content=article.content)
-            elif platform == "wordpress":
-                pa = db.query(PlatformAccount).filter(PlatformAccount.id == site.platform_account_id).first()
-                if pa:
-                    wordpress.update_post(pa.access_token, site.blog_id,
-                                          article.blogger_post_id, article.title, article.content)
-            elif platform == "tumblr":
-                pa = db.query(PlatformAccount).filter(PlatformAccount.id == site.platform_account_id).first()
-                if pa:
-                    token = tumblr.refresh_access_token(db, pa)
-                    tumblr.update_post(token, site.blog_id,
-                                       article.blogger_post_id, article.title, article.content)
-            elif platform == "hashnode":
-                pa = db.query(PlatformAccount).filter(PlatformAccount.id == site.platform_account_id).first()
-                if pa:
-                    hashnode.update_post(pa.access_token, article.blogger_post_id,
-                                         article.title, article.content)
-            elif platform == "wordpress_selfhosted":
-                pa = db.query(PlatformAccount).filter(PlatformAccount.id == site.platform_account_id).first()
-                if pa:
-                    wp_sh.update_post(pa.refresh_token, pa.name, pa.access_token,
-                                      article.blogger_post_id, article.title, article.content)
-            logger.info(f"Rewrote article {article.id} [{platform}]: '{old_title}' → '{article.title}'")
-
-    except Exception as e:
-        logger.error(f"Error rewriting article for task {task.id}: {e}")
 
 
 # ─── Broken Content Detection ────────────────────────────────────────────────
@@ -1175,11 +1376,18 @@ def start_scheduler():
     # Viết và đăng bài mỗi 5 phút (just-in-time: viết khi tới giờ đăng)
     _scheduler.add_job(publish_ready_articles, IntervalTrigger(minutes=5), id="publish_articles", replace_existing=True)
 
+    # Process recovery tasks every 10 minutes (improve unindexed articles)
+    _scheduler.add_job(process_recovery_tasks, IntervalTrigger(minutes=10), id="recovery_process", replace_existing=True)
+
+    # Process YouTube sources every 10 minutes
+    _scheduler.add_job(process_youtube_sources, IntervalTrigger(minutes=10), id="youtube_process", replace_existing=True)
+
     # Submit new URLs to Sinbyte every 30 minutes
     _scheduler.add_job(submit_new_urls_to_sinbyte, IntervalTrigger(minutes=30), id="sinbyte_submit", replace_existing=True)
 
-    # Check index status every 1 hour (max 10 URLs per run to avoid blocks)
-    _scheduler.add_job(check_index_status, IntervalTrigger(hours=1), id="check_index", replace_existing=True)
+    # NOTE: check_index_status is disabled — Google blocks automated checks
+    # causing false "not indexed" results and wasted resubmission tokens.
+    # Index push is done once at publish time; no follow-up check needed.
 
     # System health check every 30 minutes — sends email alert if thresholds exceeded
     _scheduler.add_job(check_system_health, IntervalTrigger(minutes=30), id="health_check", replace_existing=True)

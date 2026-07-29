@@ -61,12 +61,18 @@ def _do_request(url: str, proxy_url: str = None) -> httpx.Response:
         )
 
 
-def check_google_index(url: str, proxy_url: str = None) -> bool:
+def check_google_index(url: str, proxy_url: str = None) -> bool | None:
     """Check if a URL is indexed by Google.
 
+    Returns:
+      True  — URL is confirmed indexed
+      False — URL is confirmed NOT indexed
+      None  — cannot determine (request blocked by Google / CAPTCHA)
+
     Strategy:
-    1. Try direct request (free).
-    2. If blocked (429 / CAPTCHA) and proxy_url is set → retry via DataImpulse proxy.
+    1. Try direct request.
+    2. If blocked and proxy_url is set → retry via DataImpulse proxy.
+    3. If still blocked → return None (unknown, not False).
     """
     try:
         resp = _do_request(url)
@@ -78,12 +84,15 @@ def check_google_index(url: str, proxy_url: str = None) -> bool:
 
     # Fallback: DataImpulse proxy
     if not proxy_url:
-        return False
+        return None  # blocked, no proxy → unknown (do NOT return False)
 
     try:
         logger.info("Retrying via DataImpulse proxy: %s", url)
         resp = _do_request(url, proxy_url=proxy_url)
+        if _is_blocked(resp):
+            logger.warning("Proxy also blocked for %s", url)
+            return None
         return _parse_indexed(resp, url)
     except Exception as exc:
         logger.error("DataImpulse proxy check error for %s: %s", url, exc)
-        return False
+        return None

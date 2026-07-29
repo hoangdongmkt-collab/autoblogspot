@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}{{ _("rcv_title") }}{% endblock %}
+{% block content %}
+
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <h1 class="fw-bold mb-0 h4"><i class="bi bi-arrow-repeat me-2 text-warning"></i>{{ _("rcv_title") }}</h1>
+  <a href="/recovery/export" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-download me-1"></i>CSV
+  </a>
+</div>
+
+{% if request.query_params.get('success') %}
+<div class="alert alert-success alert-dismissible fade show py-2" role="alert">
+  <i class="bi bi-check-circle me-1"></i>{{ request.query_params.get('success')|replace('+', ' ') }}
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if request.query_params.get('error') %}
+<div class="alert alert-danger alert-dismissible fade show py-2" role="alert">
+  <i class="bi bi-exclamation-triangle me-1"></i>{{ request.query_params.get('error')|replace('+', ' ') }}
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="row g-4">
+  <!-- Left: Input form -->
+  <div class="col-md-5">
+    <div class="card shadow-sm">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-link-45deg me-1"></i>{{ _("rcv_input_title") }}
+      </div>
+      <div class="card-body">
+        <form method="post" action="/recovery/submit">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">{{ _("rcv_input_label") }}</label>
+            <textarea name="urls_text" class="form-control font-monospace small" rows="14"
+              id="urlsInput"
+              placeholder="{{ _('rcv_input_placeholder') }}"
+              oninput="countUrls()"></textarea>
+            <div class="d-flex justify-content-between mt-1">
+              <span id="url-badge" class="badge bg-secondary small">0 URL</span>
+              <span class="text-muted" style="font-size:0.75rem;">{{ _("rcv_input_hint") }}</span>
+            </div>
+          </div>
+          <div class="alert alert-warning py-2 small">
+            <i class="bi bi-info-circle me-1"></i>
+            {{ _("rcv_warning") }}
+          </div>
+          <button type="submit" class="btn btn-warning w-100 fw-semibold">
+            <i class="bi bi-send me-1"></i>{{ _("rcv_btn_submit") }}
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- How it works -->
+    <div class="card border-info mt-3">
+      <div class="card-body small text-muted">
+        <strong><i class="bi bi-info-circle text-info me-1"></i>{{ _("rcv_how_title") }}:</strong>
+        <ol class="mb-0 mt-1">
+          <li>{{ _("rcv_how_1") }}</li>
+          <li>{{ _("rcv_how_2") }}</li>
+          <li>{{ _("rcv_how_3") }}</li>
+          <li>{{ _("rcv_how_4") }}</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Task list -->
+  <div class="col-md-7">
+    <!-- Summary stats -->
+    <div class="row g-2 mb-3">
+      <div class="col">
+        <a href="/recovery" class="stat-card mini text-decoration-none {{ 'border-primary' if not filter_status }}">
+          <div class="stat-value">{{ counts.all }}</div>
+          <div class="stat-label">{{ _("rcv_stat_all") }}</div>
+        </a>
+      </div>
+      <div class="col">
+        <a href="/recovery?status=pending" class="stat-card mini text-decoration-none {{ 'border-primary' if filter_status == 'pending' }}">
+          <div class="stat-value text-secondary">{{ counts.pending + counts.processing }}</div>
+          <div class="stat-label">{{ _("rcv_stat_pending") }}</div>
+        </a>
+      </div>
+      <div class="col">
+        <a href="/recovery?status=done" class="stat-card mini text-decoration-none {{ 'border-primary' if filter_status == 'done' }}">
+          <div class="stat-value text-success">{{ counts.done }}</div>
+          <div class="stat-label">{{ _("rcv_stat_done") }}</div>
+        </a>
+      </div>
+      <div class="col">
+        <a href="/recovery?status=failed" class="stat-card mini text-decoration-none {{ 'border-primary' if filter_status in ('failed', 'not_found') }}">
+          <div class="stat-value text-danger">{{ counts.failed + counts.not_found }}</div>
+          <div class="stat-label">{{ _("rcv_stat_failed") }}</div>
+        </a>
+      </div>
+    </div>
+
+    <!-- Task table -->
+    <div class="card shadow-sm">
+      <div class="card-body p-0">
+        {% if tasks %}
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0 align-middle">
+            <thead class="table-dark">
+              <tr>
+                <th class="ps-3">URL</th>
+                <th style="width:110px">{{ _("rcv_col_status") }}</th>
+                <th style="width:120px">{{ _("rcv_col_time") }}</th>
+                <th style="width:80px"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for task in tasks %}
+              <tr>
+                <td class="ps-3">
+                  <a href="{{ task.url }}" target="_blank" class="text-truncate d-inline-block" style="max-width:280px" title="{{ task.url }}">
+                    {{ task.url | replace('https://', '') | replace('http://', '') | truncate(60) }}
+                  </a>
+                  {% if task.error_message %}
+                  <div class="text-danger small mt-1">{{ task.error_message[:80] }}</div>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if task.status == 'pending' %}
+                    <span class="badge bg-secondary">{{ _("rcv_badge_pending") }}</span>
+                  {% elif task.status == 'processing' %}
+                    <span class="badge bg-warning text-dark">{{ _("rcv_badge_processing") }}</span>
+                  {% elif task.status == 'done' %}
+                    <span class="badge bg-success">{{ _("rcv_badge_done") }}</span>
+                  {% elif task.status == 'not_found' %}
+                    <span class="badge bg-danger">{{ _("rcv_badge_not_found") }}</span>
+                  {% else %}
+                    <span class="badge bg-danger">{{ _("rcv_badge_failed") }}</span>
+                  {% endif %}
+                </td>
+                <td class="text-muted small">
+                  {% if task.processed_at %}
+                    {{ task.processed_at.strftime('%d/%m %H:%M') }}
+                  {% elif task.created_at %}
+                    {{ task.created_at.strftime('%d/%m %H:%M') }}
+                  {% endif %}
+                </td>
+                <td>
+                  <div class="d-flex gap-1 justify-content-end pe-2">
+                    {% if task.status in ('failed', 'not_found') %}
+                    <form method="post" action="/recovery/{{ task.id }}/retry">
+                      <button class="btn btn-xs btn-outline-warning" title="{{ _('rcv_btn_retry') }}"><i class="bi bi-arrow-repeat"></i></button>
+                    </form>
+                    {% endif %}
+                    <form method="post" action="/recovery/{{ task.id }}/delete" onsubmit="return confirm('Xóa task này?')">
+                      <button class="btn btn-xs btn-outline-danger" title="{{ _('rcv_btn_delete') }}"><i class="bi bi-trash"></i></button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if total_pages > 1 %}
+        <div class="d-flex justify-content-center py-3">
+          <nav>
+            <ul class="pagination pagination-sm mb-0">
+              {% for p in range(1, total_pages + 1) %}
+              <li class="page-item {{ 'active' if p == page }}">
+                <a class="page-link" href="/recovery?page={{ p }}{% if filter_status %}&status={{ filter_status }}{% endif %}">{{ p }}</a>
+              </li>
+              {% endfor %}
+            </ul>
+          </nav>
+        </div>
+        {% endif %}
+
+        {% else %}
+        <div class="text-center text-muted py-5">
+          <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+          {{ _("rcv_empty") }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function countUrls() {
+  const ta = document.getElementById('urlsInput');
+  const badge = document.getElementById('url-badge');
+  const lines = ta.value.split('\n').filter(l => l.trim().startsWith('http'));
+  badge.textContent = lines.length + ' URL';
+  badge.className = 'badge ' + (lines.length > 0 ? 'bg-warning text-dark' : 'bg-secondary') + ' small';
+}
+</script>
+{% endblock %}

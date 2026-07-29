@@ -26,6 +26,7 @@ from .routers import auth as auth_router
 from .routers import admin as admin_router
 from .routers import blog as blog_router
 from .routers import contact as contact_router
+from .routers import recovery as recovery_router
 from .templates import templates
 
 logging.basicConfig(
@@ -111,6 +112,20 @@ async def lifespan(_app: FastAPI):
     init_db()
     db = SessionLocal()
     try:
+        # Migration: add new columns if not exist
+        for stmt in [
+            "ALTER TABLE projects ADD COLUMN content_block TEXT DEFAULT ''",
+            "ALTER TABLE projects ADD COLUMN content_block_position VARCHAR(20) DEFAULT 'bottom'",
+            "ALTER TABLE projects ADD COLUMN project_type VARCHAR(20) DEFAULT 'keyword'",
+            "ALTER TABLE projects ADD COLUMN drive_folder_url TEXT DEFAULT ''",
+            "ALTER TABLE keyword_clusters ADD COLUMN youtube_source_id INTEGER REFERENCES youtube_sources(id)",
+            # recovery_tasks table created by init_db() via Base.metadata.create_all
+        ]:
+            try:
+                db.execute(__import__("sqlalchemy").text(stmt))
+                db.commit()
+            except Exception:
+                db.rollback()
         seed_agents(db)
         ensure_superadmin(db, "admin@autoblogspot.com", "AdminPass2026!", "Hoàng Đồng")
         update_site_globals(TELEGRAM_USERNAME=get_app_setting(db, "telegram_username"))
@@ -177,6 +192,7 @@ app.include_router(settings_router.router)
 app.include_router(admin_router.router)
 app.include_router(blog_router.router)
 app.include_router(contact_router.router)
+app.include_router(recovery_router.router)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -250,20 +266,6 @@ def health_check():
     return JSONResponse({"status": status, "db": db_ok, "version": "1.0.0"})
 
 
-@app.get("/{key}.txt", response_class=PlainTextResponse)
-def indexnow_key_file(key: str, db: Session = Depends(get_db)):
-    """Serve IndexNow key verification file for WordPress self-hosted sites."""
-    from .services.openrouter import get_setting as _gs
-    from .models import AppSetting
-    row = db.query(AppSetting).filter(
-        AppSetting.key.like(f"%indexnow_key"),
-        AppSetting.value == key,
-    ).first()
-    if row:
-        return key
-    raise StarletteHTTPException(status_code=404)
-
-
 @app.get("/robots.txt", response_class=PlainTextResponse)
 def robots_txt():
     return (
@@ -282,6 +284,20 @@ def robots_txt():
         "Disallow: /set-lang\n"
         "Sitemap: https://autoblogspot.com/sitemap.xml\n"
     )
+
+
+@app.get("/{key}.txt", response_class=PlainTextResponse)
+def indexnow_key_file(key: str, db: Session = Depends(get_db)):
+    """Serve IndexNow key verification file for WordPress self-hosted sites."""
+    from .services.openrouter import get_setting as _gs
+    from .models import AppSetting
+    row = db.query(AppSetting).filter(
+        AppSetting.key.like(f"%indexnow_key"),
+        AppSetting.value == key,
+    ).first()
+    if row:
+        return key
+    raise StarletteHTTPException(status_code=404)
 
 
 @app.get("/sitemap.xml")

@@ -183,6 +183,47 @@ def rehost_images_for_platform(content: str, platform: str, **auth) -> str:
     return content
 
 
+def _get_image_url(
+    query: str,
+    keywords: list[str],
+    drive_folder_url: str,
+    google_api_key: str,
+    pixabay_api_key: str,
+    imgbb_api_key: str,
+    drive_files_cache: list,
+) -> str:
+    """
+    Fallback chain: Google Drive → Pixabay → AI (Pollinations.ai)
+    drive_files_cache: mutable list, pre-fetched Drive file list to avoid re-fetching per image.
+    """
+    from . import drive_service
+
+    # ── 1. Google Drive ───────────────────────────────────────────────────────
+    if drive_folder_url and google_api_key and drive_files_cache:
+        # Pick randomly — repetition is fine (all images belong to user)
+        chosen = random.choice(drive_files_cache)
+        img_bytes = drive_service._download_drive_image(chosen["id"])
+        if img_bytes:
+            if imgbb_api_key:
+                # Upload to ImgBB for stable, reliable display in blog posts
+                hosted = drive_service._upload_to_imgbb(img_bytes, imgbb_api_key, chosen["name"])
+                if hosted:
+                    return hosted
+            # ImgBB not configured — use thumbnail URL (more reliable than uc?export=view)
+            return f"https://drive.google.com/thumbnail?id={chosen['id']}&sz=w800"
+
+    # ── 2. Pixabay ────────────────────────────────────────────────────────────
+    if pixabay_api_key:
+        raw = fetch_pixabay_image(query, pixabay_api_key)
+        if raw:
+            return _permanent_url(raw, imgbb_api_key)
+
+    # ── 3. AI Generation (Pollinations.ai — free) ─────────────────────────────
+    ai_prompt = f"professional high quality product photo of {query}, realistic, detailed, clean background"
+    raw = _build_pollinations_url(ai_prompt, 800, 450)
+    return _permanent_url(raw, imgbb_api_key)
+
+
 def insert_images_into_content(
     content: str,
     title: str,
@@ -190,17 +231,41 @@ def insert_images_into_content(
     image_queries: list[str],
     pixabay_api_key: str,
     imgbb_api_key: str = "",
+    drive_folder_url: str = "",
+    google_api_key: str = "",
+    keywords: list[str] = None,
 ) -> str:
     """
     Embed 2-4 images into article.
-    If imgbb_api_key is set: all images are uploaded to imgbb.com for permanent URLs.
-    Otherwise: Pollinations URLs embedded directly (stable), Pixabay URLs embedded
-    directly (will expire ~24h — imgbb key recommended).
-    For WordPress: rehost_images_for_platform() re-uploads to WP media library at publish time.
+
+    Image source priority (per image):
+      1. Google Drive folder (project-specific product images)
+      2. Pixabay (stock photos)
+      3. Pollinations.ai (AI-generated, free, no key needed)
+
+    If imgbb_api_key: all images uploaded to imgbb for permanent stable URLs.
     """
-    prompt = image_prompt.strip() if image_prompt else title
-    hero_raw = build_hero_image_url(prompt)
-    hero_url = _permanent_url(hero_raw, imgbb_api_key)
+    from . import drive_service
+
+    # Pre-fetch Drive file list once (shared across hero + section images)
+    drive_files_cache: list = []
+    if drive_folder_url and google_api_key:
+        folder_id = drive_service.extract_folder_id(drive_folder_url)
+        if folder_id:
+            drive_files_cache = drive_service.list_folder_images(folder_id, google_api_key)
+            random.shuffle(drive_files_cache)  # randomize order
+
+    # ── Hero image ─────────────────────────────────────────────────────────
+    hero_query = image_prompt.strip() if image_prompt else title
+    hero_url = _get_image_url(
+        query=hero_query,
+        keywords=keywords or [],
+        drive_folder_url=drive_folder_url,
+        google_api_key=google_api_key,
+        pixabay_api_key=pixabay_api_key,
+        imgbb_api_key=imgbb_api_key,
+        drive_files_cache=drive_files_cache,
+    )
     hero_html = (
         f'<figure style="margin:0 0 2rem;text-align:center;">'
         f'<img src="{hero_url}" alt="{title}" '
@@ -211,6 +276,7 @@ def insert_images_into_content(
     sections = re.split(r"(?=<h2[\s>])", content)
     sections[0] = hero_html + sections[0]
 
+    # ── Section images ──────────────────────────────────────────────────────
     if image_queries:
         word_count = len(re.sub(r"<[^>]+>", " ", content).split())
         if word_count < 400:
@@ -232,20 +298,15 @@ def insert_images_into_content(
             for i, section_idx in enumerate(chosen):
                 if i >= len(image_queries):
                     break
-                # Get raw URL from Pixabay or Pollinations
-                if pixabay_api_key:
-                    raw_url = fetch_pixabay_image(image_queries[i], pixabay_api_key)
-                    if not raw_url:
-                        raw_url = _build_pollinations_url(
-                            f"professional high quality photo illustration of {image_queries[i]}, realistic, detailed",
-                            800, 450,
-                        )
-                else:
-                    raw_url = _build_pollinations_url(
-                        f"professional high quality photo illustration of {image_queries[i]}, realistic, detailed",
-                        800, 450,
-                    )
-                final_url = _permanent_url(raw_url, imgbb_api_key)
+                final_url = _get_image_url(
+                    query=image_queries[i],
+                    keywords=keywords or [],
+                    drive_folder_url=drive_folder_url,
+                    google_api_key=google_api_key,
+                    pixabay_api_key=pixabay_api_key,
+                    imgbb_api_key=imgbb_api_key,
+                    drive_files_cache=drive_files_cache,
+                )
                 safe_q = image_queries[i].replace('"', "")
                 figure = (
                     f'\n<figure style="margin:1.5rem 0;text-align:center;">'

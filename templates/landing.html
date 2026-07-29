@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ _("land_title") }} — AutoBlogspot</title>
   <meta name="description" content="{{ _('land_meta_description') }}">
-  <meta name="keywords" content="phần mềm tự động đăng bài, auto blog wordpress, AI viết bài SEO, tự động đăng blogspot, wordpress self-hosted automation, tool đăng bài nhiều nền tảng">
+  <meta name="keywords" content="{{ _('land_meta_keywords') }}">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://autoblogspot.com/">
   <!-- hreflang multilingual SEO -->
@@ -20,7 +20,7 @@
   <meta property="og:title" content="{{ _('land_title') }} — AutoBlogspot">
   <meta property="og:description" content="{{ _('land_meta_description') }}">
   <meta property="og:image" content="https://autoblogspot.com/static/img/og-default.png">
-  <meta property="og:locale" content="vi_VN">
+  <meta property="og:locale" content="{% if get_lang() == 'en' %}en_US{% elif get_lang() == 'fr' %}fr_FR{% elif get_lang() == 'it' %}it_IT{% else %}vi_VN{% endif %}">
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="{{ _('land_title') }} — AutoBlogspot">
@@ -35,9 +35,9 @@
     "applicationCategory": "BusinessApplication",
     "operatingSystem": "Web",
     "url": "https://autoblogspot.com",
-    "description": "Phần mềm AI tự động viết bài chuẩn SEO và đăng lên 5 nền tảng blog: Blogspot, WordPress.com, WordPress self-hosted, Tumblr, Hashnode.",
+    "description": "{{ _('land_meta_description') | e }}",
     "offers": [
-      {"@type": "Offer", "name": "Free Trial", "price": "0", "priceCurrency": "{% if get_lang() == 'vi' %}VND{% else %}USD{% endif %}", "description": "3 ngày dùng thử miễn phí"},
+      {"@type": "Offer", "name": "Free Trial", "price": "0", "priceCurrency": "{% if get_lang() == 'vi' %}VND{% else %}USD{% endif %}", "description": "{% if get_lang() == 'en' %}3-day free trial{% elif get_lang() == 'fr' %}Essai gratuit 3 jours{% elif get_lang() == 'it' %}3 giorni di prova gratuita{% else %}3 ngày dùng thử miễn phí{% endif %}"},
       {"@type": "Offer", "name": "Pro", "price": "{% if get_lang() == 'vi' %}200000{% else %}8{% endif %}", "priceCurrency": "{% if get_lang() == 'vi' %}VND{% else %}USD{% endif %}"},
       {"@type": "Offer", "name": "Business", "price": "{% if get_lang() == 'vi' %}500000{% else %}20{% endif %}", "priceCurrency": "{% if get_lang() == 'vi' %}VND{% else %}USD{% endif %}"}
     ],

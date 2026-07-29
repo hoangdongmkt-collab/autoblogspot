@@ -12,10 +12,11 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..dependencies import get_current_user, can_create_project
-from ..models import Project, ProjectSite, BlogspotSite, Keyword, KeywordCluster, Article
+from ..models import Project, ProjectSite, BlogspotSite, Keyword, KeywordCluster, Article, YoutubeSource
 from ..services.openrouter import FREE_MODELS, LANGUAGE_NAMES, get_setting
 from ..services.ai_providers import CLAUDE_MODELS, OPENAI_MODELS, GROQ_MODELS, GEMINI_MODELS
 from ..services.scheduler import process_keyword_clustering
+from ..services import youtube_service
 from ..templates import templates
 
 
@@ -131,6 +132,11 @@ async def create_project(
     site_languages: list[str] = Form(default=[]),
     backlinks_json: str = Form("[]"),
     custom_labels_text: str = Form(""),
+    content_block: str = Form(""),
+    content_block_position: str = Form("bottom"),
+    drive_folder_url: str = Form(""),
+    project_type: str = Form("keyword"),
+    youtube_urls_text: str = Form(""),
     keywords_text: str = Form(""),
     clusters_file: UploadFile = File(None),
     db: Session = Depends(get_db),
@@ -140,6 +146,7 @@ async def create_project(
     if not ok:
         return RedirectResponse(f"/projects?error={msg}", status_code=303)
 
+    ptype = project_type if project_type in ("keyword", "youtube") else "keyword"
     backlinks, custom_labels = _parse_project_form(backlinks_json, custom_labels_text)
     project = Project(
         user_id=current_user.id,
@@ -149,6 +156,10 @@ async def create_project(
         ai_model=ai_model,
         backlinks=json.dumps(backlinks),
         custom_labels=json.dumps(custom_labels, ensure_ascii=False),
+        content_block=content_block.strip(),
+        content_block_position=content_block_position or "bottom",
+        drive_folder_url=drive_folder_url.strip(),
+        project_type=ptype,
         status="pending",
     )
     db.add(project)
@@ -158,35 +169,48 @@ async def create_project(
         lang = site_languages[i] if i < len(site_languages) else "vi"
         db.add(ProjectSite(project_id=project.id, site_id=site_id, language=lang))
 
-    # Upload Excel clusters — bỏ qua AI clustering, tạo cluster ngay
-    if clusters_file and clusters_file.filename and clusters_file.filename.endswith((".xlsx", ".xls")):
-        try:
-            import openpyxl
-            content = await clusters_file.read()
-            wb = openpyxl.load_workbook(filename=io.BytesIO(content), data_only=True)
-            ws = wb.active
-            for row in ws.iter_rows(min_row=2, values_only=True):
-                if not row or not row[0]:
-                    continue
-                primary_keyword = str(row[0]).strip()
-                if not primary_keyword:
-                    continue
-                secondary_keywords = [str(v).strip() for v in row[1:] if v and str(v).strip()]
-                keywords = [primary_keyword] + secondary_keywords
-                cluster_name = primary_keyword
-                cluster = KeywordCluster(project_id=project.id, cluster_name=cluster_name, status="pending")
-                db.add(cluster)
-                db.flush()
-                for kw_text in keywords:
-                    db.add(Keyword(project_id=project.id, keyword=kw_text, cluster_id=cluster.id, status="clustered"))
-                for ps in project.project_sites:
-                    db.add(Article(cluster_id=cluster.id, site_id=ps.site_id, project_id=project.id, language=ps.language, status="pending"))
-        except Exception as e:
-            logger.error(f"create_project Excel parse error: {e}")
+    if ptype == "youtube":
+        # YouTube project: parse URLs + playlist, create YoutubeSource records
+        yt_api_key = get_setting(db, "youtube_api_key", user_id=current_user.id) or ""
+        video_ids = youtube_service.parse_youtube_input(youtube_urls_text, yt_api_key)
+        for vid_id in video_ids:
+            db.add(YoutubeSource(
+                project_id=project.id,
+                video_id=vid_id,
+                url=f"https://www.youtube.com/watch?v={vid_id}",
+                status="pending",
+            ))
+        project.status = "running"  # auto-start YouTube projects
 
-    elif keywords_text.strip():
-        for kw in [k.strip() for k in keywords_text.splitlines() if k.strip()]:
-            db.add(Keyword(project_id=project.id, keyword=kw))
+    else:
+        # Keyword project: Excel upload or text keywords
+        if clusters_file and clusters_file.filename and clusters_file.filename.endswith((".xlsx", ".xls")):
+            try:
+                import openpyxl
+                content = await clusters_file.read()
+                wb = openpyxl.load_workbook(filename=io.BytesIO(content), data_only=True)
+                ws = wb.active
+                for row in ws.iter_rows(min_row=2, values_only=True):
+                    if not row or not row[0]:
+                        continue
+                    primary_keyword = str(row[0]).strip()
+                    if not primary_keyword:
+                        continue
+                    secondary_keywords = [str(v).strip() for v in row[1:] if v and str(v).strip()]
+                    keywords_list = [primary_keyword] + secondary_keywords
+                    cluster = KeywordCluster(project_id=project.id, cluster_name=primary_keyword, status="pending")
+                    db.add(cluster)
+                    db.flush()
+                    for kw_text in keywords_list:
+                        db.add(Keyword(project_id=project.id, keyword=kw_text, cluster_id=cluster.id, status="clustered"))
+                    for ps in project.project_sites:
+                        db.add(Article(cluster_id=cluster.id, site_id=ps.site_id, project_id=project.id, language=ps.language, status="pending"))
+            except Exception as e:
+                logger.error(f"create_project Excel parse error: {e}")
+
+        elif keywords_text.strip():
+            for kw in [k.strip() for k in keywords_text.splitlines() if k.strip()]:
+                db.add(Keyword(project_id=project.id, keyword=kw))
 
     db.commit()
     return RedirectResponse(f"/projects/{project.id}", status_code=303)
@@ -505,6 +529,8 @@ def edit_project(
     site_ids: list[int] = Form(default=[]),
     site_languages: list[str] = Form(default=[]),
     backlinks_json: str = Form("[]"), custom_labels_text: str = Form(""),
+    content_block: str = Form(""), content_block_position: str = Form("bottom"),
+    drive_folder_url: str = Form(""),
     db: Session = Depends(get_db),
 ):
     current_user = get_current_user(request, db)
@@ -515,14 +541,17 @@ def edit_project(
         raise HTTPException(status_code=404)
 
     backlinks, custom_labels = _parse_project_form(backlinks_json, custom_labels_text)
-    project.name                = name
-    project.description         = description
-    project.articles_per_day    = _cap_articles_per_day(articles_per_day, current_user)
-    project.min_interval_minutes = min_interval
-    project.max_interval_minutes = max_interval
-    project.ai_model            = ai_model
-    project.backlinks           = json.dumps(backlinks)
-    project.custom_labels       = json.dumps(custom_labels, ensure_ascii=False)
+    project.name                    = name
+    project.description             = description
+    project.articles_per_day        = _cap_articles_per_day(articles_per_day, current_user)
+    project.min_interval_minutes    = min_interval
+    project.max_interval_minutes    = max_interval
+    project.ai_model                = ai_model
+    project.backlinks               = json.dumps(backlinks)
+    project.custom_labels           = json.dumps(custom_labels, ensure_ascii=False)
+    project.content_block           = content_block.strip()
+    project.content_block_position  = content_block_position or "bottom"
+    project.drive_folder_url        = drive_folder_url.strip()
 
     existing     = {ps.site_id: ps for ps in project.project_sites}
     new_site_ids = set(site_ids)
@@ -577,10 +606,10 @@ def billing_page(request: Request, db: Session = Depends(get_db)):
                     "amount":    amt,
                 }
 
-    ls_configured = bool(
-        get_setting(db, "ls_api_key") and
-        get_setting(db, "ls_store_id") and
-        get_setting(db, "ls_pro_variant_id")
+    paypal_configured = bool(
+        get_setting(db, "paypal_client_id") and
+        get_setting(db, "paypal_client_secret") and
+        get_setting(db, "paypal_pro_price_usd")
     )
     return templates.TemplateResponse(request, "billing.html", {
         "current_user":      current_user,
@@ -593,39 +622,10 @@ def billing_page(request: Request, db: Session = Depends(get_db)):
         "vn_payment_json":   _json.dumps(vn_payment),
         "month_options":     MONTH_OPTIONS,
         "sepay_configured":  sepay_configured,
-        "ls_configured":     ls_configured,
-        "ls_pro_price":      get_setting(db, "ls_pro_price") or "$8/month",
-        "ls_business_price": get_setting(db, "ls_business_price") or "$20/month",
+        "paypal_configured":          paypal_configured,
+        "paypal_pro_price_usd":       get_setting(db, "paypal_pro_price_usd") or "8.00",
+        "paypal_business_price_usd":  get_setting(db, "paypal_business_price_usd") or "20.00",
     })
-
-
-@router.get("/billing/checkout/{plan}")
-def billing_checkout(plan: str, request: Request, db: Session = Depends(get_db)):
-    from urllib.parse import quote_plus
-    from ..services.lemonsqueezy import create_checkout
-    current_user = get_current_user(request, db)
-
-    if plan not in ("pro", "business"):
-        return RedirectResponse("/billing?error=Invalid+plan")
-
-    api_key    = get_setting(db, "ls_api_key") or ""
-    store_id   = get_setting(db, "ls_store_id") or ""
-    variant_id = get_setting(db, f"ls_{plan}_variant_id") or ""
-
-    if not (api_key and store_id and variant_id):
-        return RedirectResponse("/billing?error=International+payment+not+configured+yet")
-
-    base_url = str(request.base_url).rstrip("/")
-    redirect_url = f"{base_url}/billing?success=payment_completed"
-    try:
-        checkout_url = create_checkout(
-            api_key, store_id, variant_id,
-            current_user.email, plan, current_user.id,
-            redirect_url,
-        )
-        return RedirectResponse(checkout_url)
-    except ValueError as e:
-        return RedirectResponse(f"/billing?error={quote_plus(str(e))}")
 
 
 @router.post("/billing/webhook/sepay")
@@ -678,22 +678,120 @@ async def sepay_webhook(request: Request, db: Session = Depends(get_db)):
     return Response(content='{"success":true}', media_type="application/json")
 
 
-@router.post("/billing/webhook/lemonsqueezy")
-async def lemonsqueezy_webhook(request: Request, db: Session = Depends(get_db)):
+@router.get("/billing/checkout/paypal/{plan}")
+def paypal_checkout(
+    plan: str, request: Request,
+    months: int = 1,
+    db: Session = Depends(get_db),
+):
+    from urllib.parse import quote_plus
+    from ..services.paypal import create_order
+
+    current_user = get_current_user(request, db)
+    if plan not in ("pro", "business"):
+        return RedirectResponse("/billing?error=Invalid+plan")
+
+    client_id     = get_setting(db, "paypal_client_id") or ""
+    client_secret = get_setting(db, "paypal_client_secret") or ""
+    price_usd     = get_setting(db, f"paypal_{plan}_price_usd") or ""
+    sandbox       = (get_setting(db, "paypal_sandbox") or "") == "1"
+
+    if not (client_id and client_secret and price_usd):
+        return RedirectResponse("/billing?error=PayPal+chua+duoc+cau+hinh")
+
+    base_url   = str(request.base_url).rstrip("/")
+    return_url = f"{base_url}/billing/paypal/return"
+    cancel_url = f"{base_url}/billing/paypal/cancel"
+
+    try:
+        order = create_order(
+            client_id, client_secret,
+            plan, months, price_usd,
+            current_user.id,
+            return_url, cancel_url,
+            sandbox=sandbox,
+        )
+        return RedirectResponse(order["approve_url"])
+    except ValueError as e:
+        return RedirectResponse(f"/billing?error={quote_plus(str(e))}")
+
+
+@router.get("/billing/paypal/return")
+def paypal_return(
+    request: Request,
+    token: str = "",
+    db: Session = Depends(get_db),
+):
+    """PayPal redirects here after user approves payment."""
+    from urllib.parse import quote_plus
+    from ..services.paypal import capture_order
+    from ..services.auth_service import upgrade_plan as _upgrade
+
+    current_user  = get_current_user(request, db)
+    client_id     = get_setting(db, "paypal_client_id") or ""
+    client_secret = get_setting(db, "paypal_client_secret") or ""
+    sandbox       = (get_setting(db, "paypal_sandbox") or "") == "1"
+
+    if not token:
+        return RedirectResponse("/billing?error=PayPal+return+thieu+token")
+
+    try:
+        result = capture_order(client_id, client_secret, token, sandbox=sandbox)
+    except ValueError as e:
+        return RedirectResponse(f"/billing?error={quote_plus(str(e))}")
+
+    status = result.get("status", "")
+    if status != "COMPLETED":
+        return RedirectResponse(f"/billing?error=PayPal+payment+{status}")
+
+    # Extract plan/months from custom_id: "user_id:plan:months"
+    try:
+        units     = result.get("purchase_units", [{}])
+        custom_id = units[0].get("payments", {}).get("captures", [{}])[0].get("custom_id", "")
+        _, plan, months_str = custom_id.split(":")
+        months = int(months_str)
+    except Exception:
+        plan, months = "pro", 1
+
+    _upgrade(db, current_user.id, plan, months=months)
+    logger.info("PayPal return: upgraded user %d to plan=%s months=%d order=%s",
+                current_user.id, plan, months, token)
+    return RedirectResponse("/billing?success=payment_completed")
+
+
+@router.get("/billing/paypal/cancel")
+def paypal_cancel(request: Request):
+    return RedirectResponse("/billing?error=PayPal+payment+cancelled")
+
+
+@router.post("/billing/webhook/paypal")
+async def paypal_webhook(request: Request, db: Session = Depends(get_db)):
     from ..models import User
     from ..services.auth_service import upgrade_plan
-    from ..services.lemonsqueezy import verify_webhook
+    from ..services.paypal import verify_webhook_signature
 
     payload_bytes = await request.body()
-    signature     = request.headers.get("X-Signature", "")
-    secret        = get_setting(db, "ls_webhook_secret") or ""
+    client_id     = get_setting(db, "paypal_client_id") or ""
+    client_secret = get_setting(db, "paypal_client_secret") or ""
+    webhook_id    = get_setting(db, "paypal_webhook_id") or ""
+    sandbox       = (get_setting(db, "paypal_sandbox") or "") == "1"
 
-    if not secret:
-        logger.error("LemonSqueezy webhook: ls_webhook_secret not configured — rejecting all requests")
+    if not (client_id and client_secret and webhook_id):
+        logger.error("PayPal webhook: chưa cấu hình paypal_client_id/secret/webhook_id")
         return Response(status_code=503)
 
-    if not verify_webhook(payload_bytes, signature, secret):
-        logger.warning("LemonSqueezy webhook: invalid signature from %s",
+    verified = verify_webhook_signature(
+        client_id, client_secret, webhook_id,
+        transmission_id   = request.headers.get("PayPal-Transmission-Id", ""),
+        transmission_time = request.headers.get("PayPal-Transmission-Time", ""),
+        cert_url          = request.headers.get("PayPal-Cert-Url", ""),
+        auth_algo         = request.headers.get("PayPal-Auth-Algo", ""),
+        transmission_sig  = request.headers.get("PayPal-Transmission-Sig", ""),
+        body              = payload_bytes,
+        sandbox           = sandbox,
+    )
+    if not verified:
+        logger.warning("PayPal webhook: chữ ký không hợp lệ từ %s",
                        request.client.host if request.client else "?")
         return Response(status_code=401)
 
@@ -702,35 +800,30 @@ async def lemonsqueezy_webhook(request: Request, db: Session = Depends(get_db)):
     except Exception:
         return Response(status_code=400)
 
-    event_name = event.get("meta", {}).get("event_name", "")
-    if event_name not in ("order_created", "subscription_created", "subscription_updated"):
+    if event.get("event_type") != "PAYMENT.CAPTURE.COMPLETED":
         return Response(status_code=200)
 
-    attrs  = event.get("data", {}).get("attributes", {})
-    status = attrs.get("status", "")
-    if status not in ("paid", "active"):
+    resource  = event.get("resource", {})
+    cap_status = resource.get("status", "")
+    if cap_status != "COMPLETED":
         return Response(status_code=200)
 
-    custom      = event.get("meta", {}).get("custom_data", {})
-    plan        = custom.get("plan", "pro")
-    user_id_str = custom.get("user_id", "")
-    user_email  = attrs.get("user_email", "")
+    # custom_id format: "user_id:plan:months"
+    custom_id = resource.get("custom_id", "")
+    try:
+        user_id_str, plan, months_str = custom_id.split(":")
+        user_id = int(user_id_str)
+        months  = int(months_str)
+    except Exception:
+        logger.error("PayPal webhook: custom_id không hợp lệ %r", custom_id)
+        return Response(status_code=200)
 
-    user = None
-    if user_id_str:
-        try:
-            user = db.query(User).filter(User.id == int(user_id_str)).first()
-        except (ValueError, TypeError):
-            pass
-    if not user and user_email:
-        user = db.query(User).filter(User.email == user_email).first()
-
+    user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        logger.error("LemonSqueezy webhook: could not find user (id=%r, email=%r) for event %s",
-                     user_id_str, user_email, event_name)
+        logger.warning("PayPal webhook: không tìm thấy user_id=%d", user_id)
         return Response(status_code=200)
 
-    upgrade_plan(db, user.id, plan, months=1)
-    logger.info("LemonSqueezy webhook: upgraded user %d (%s) to plan=%s event=%s",
-                user.id, user.email, plan, event_name)
-    return Response(status_code=200)
+    upgrade_plan(db, user.id, plan, months=months)
+    logger.info("PayPal webhook: upgraded user %d (%s) to plan=%s months=%d",
+                user.id, user.email, plan, months)
+    return Response(content='{"success":true}', media_type="application/json")

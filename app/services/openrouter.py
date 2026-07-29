@@ -78,13 +78,14 @@ _user_rotation_index: dict[int, int] = {}  # user_id → next index in pool
 # Các model trả phí tốt nhất để đưa vào pool, grouped by credential key
 _ROTATION_PAID = {
     "gemini_api_keys": [
-        "gemini:gemini-2.0-flash",
-        "gemini:gemini-2.5-flash",
+        "gemini:gemini-3.6-flash",
+        "gemini:gemini-3.5-flash-lite",
         "gemini:gemini-1.5-flash",
     ],
     "claude_api_key": [
-        "claude:claude-3-5-haiku-20241022",
-        "claude:claude-3-5-sonnet-20241022",
+        "claude:claude-haiku-4-5-20251001",
+        "claude:claude-sonnet-4-6",
+        "claude:claude-opus-4-8",
     ],
     "openai_api_key": [
         "openai:gpt-4o-mini",
@@ -396,7 +397,11 @@ def smart_call(
                 api_key = get_setting(db, key_map[provider], user_id=user_id)
                 if api_key:
                     try:
-                        content = call_map[provider](api_key, model_id, messages, max_tokens)
+                        if provider == "claude":
+                            base_url = get_setting(db, "claude_api_base_url", user_id=user_id) or None
+                            content = ai_providers.call_claude(api_key, model_id, messages, max_tokens, base_url=base_url)
+                        else:
+                            content = call_map[provider](api_key, model_id, messages, max_tokens)
                         return content, preferred_model
                     except Exception as exc:
                         logger.warning(f"[smart_call] {provider}:{model_id} lỗi ({exc}), fallback OpenRouter")
@@ -550,6 +555,48 @@ def _replace_ai_phrases(html: str) -> str:
     return html
 
 
+def clean_ai_html_content(html: str) -> str:
+    """Loại bỏ lời chào, lời kết, ghi chú và comment HTML rác do AI tự sinh ra."""
+    if not html:
+        return ""
+    
+    # 1. Xóa toàn bộ comment HTML (e.g. <!-- comment -->)
+    html = re.sub(r"<!--.*?-->", "", html, flags=re.DOTALL)
+    
+    # 2. Xóa lời mở đầu trước thẻ HTML đầu tiên (e.g. "Dưới đây là...", "Here is...")
+    first_tag_match = re.search(r"<[a-zA-Z1-6]+[^>]*>", html)
+    if first_tag_match:
+        start_idx = first_tag_match.start()
+        preamble = html[:start_idx].strip()
+        if "<" not in preamble:
+            html = html[start_idx:]
+            
+    # 3. Xóa lời kết sau thẻ đóng HTML cuối cùng (e.g. "Hy vọng...", "Let me know...")
+    last_tag_match = list(re.finditer(r"</[a-zA-Z1-6]+>", html))
+    if last_tag_match:
+        end_idx = last_tag_match[-1].end()
+        postamble = html[end_idx:].strip()
+        if "<" not in postamble:
+            html = html[:end_idx]
+
+    # 4. Loại bỏ các dòng nhiễu hội thoại nếu chúng bị lọt vào thẻ HTML hoặc tiêu đề thừa
+    lines = html.split("\n")
+    cleaned_lines = []
+    for line in lines:
+        stripped = line.strip()
+        # Bỏ dòng bắt đầu bằng TITLE: nếu bị lặp lại trong thân bài
+        if stripped.upper().startswith("TITLE:"):
+            continue
+        # Bỏ các dòng thuần chữ hội thoại AI không có tag HTML
+        if not (stripped.startswith("<") or stripped.endswith(">")):
+            if re.match(r"^(here is the|sure, here is|chắc chắn rồi|dưới đây là|tôi hy vọng|hy vọng bài viết|note:|lưu ý:|chúc bạn).*?$", stripped, re.IGNORECASE):
+                continue
+        cleaned_lines.append(line)
+    
+    return "\n".join(cleaned_lines).strip()
+
+
+
 def humanize_article(
     db: Session,
     content: str,
@@ -565,21 +612,23 @@ def humanize_article(
     preferred = model or get_setting(db, "openrouter_model", DEFAULT_OR_MODEL, user_id=user_id)
     lang_name = LANGUAGE_NAMES.get(language, "English")
 
-    prompt = f"""You are a professional human editor. Your job is to rewrite the article below so it sounds 100% natural — as if written by an experienced human blogger, not an AI.
+    prompt = f"""You are a professional human editor. Your job is to rewrite the article below so it sounds 100% natural — as if written by an experienced human blogger with real-world expertise, fully complying with Google's June 2026 Core and Spam Update standards (prioritizing E-E-A-T and strictly defending against scaled AI content filters).
 
 === STRICT RULES (MUST follow) ===
-1. Keep ALL facts, data, and information exactly the same — do NOT add or remove information
+1. Keep ALL facts, data, and information exactly the same — do NOT add or remove key facts
 2. Keep ALL HTML tags intact: h2, h3, p, ul, ol, li, strong, em, blockquote, figure, img — do NOT delete any tags
 3. Keep ALL <a href="..."> links exactly as they are (backlinks and internal links)
 4. Language must remain entirely in {lang_name}
 5. Keep the same article structure (same number of sections and headings)
 
-=== REWRITING STYLE (make it feel genuinely human) ===
+=== REWRITING STYLE (make it feel genuinely human & expert-level) ===
+• Evidence of First-Hand Experience (E-E-A-T): Inject subtle first-person anecdotes, observations, or warnings ("When I first tested this...", "In my experience...", "A common issue I've observed in the field...").
+• Anti-Spam & Unique Value: Avoid dry, robotic summaries. Frame advice as practical, opinionated, or contrarian insider tips rather than generic web definitions.
 • Sentence length variety: alternate between short punchy sentences (4–7 words) and longer ones (20–30 words) within the same paragraph. Never write 4+ sentences of the same length in a row.
 • Paragraph length variety: some paragraphs = 1–2 sentences, others = 4–5 sentences. Vary it.
 • Kill robotic phrases: replace any "Furthermore", "Moreover", "In addition", "It is worth noting", "Needless to say", "Delve into", "Leverage", "Utilize", "In conclusion", "To summarize" with natural casual alternatives.
 • Natural transitions: use "Here's the thing —", "And that's exactly why...", "Honestly,", "The truth is,", "But here's what most people miss:", "Sound familiar?", "Good question."
-• Add personality: include 1–2 first-person lines ("In my experience...", "I've seen this work when..."), a mild opinion ("Personally, I'd recommend..."), or light casual humor.
+• Add personality: include 1–2 first-person lines, a mild opinion ("Personally, I'd recommend..."), or light casual humor.
 • Rhetorical questions: ask the reader 2–3 questions throughout the article ("Sound familiar?", "So what does that mean for you?", "Why does this matter?").
 • Emotional tone: express genuine enthusiasm about good tips, mild empathy for the reader's problem, or light frustration about common mistakes.
 • Imperfect structure: not every sentence needs to be grammatically perfect — occasional informal constructions are fine.
@@ -607,7 +656,8 @@ Return ONLY the rewritten HTML — no explanation, no JSON, no markdown fence, j
                     result = cleaned
                     break
 
-        return result if result and "<" in result else content
+        cleaned_result = clean_ai_html_content(result)
+        return cleaned_result if cleaned_result and "<" in cleaned_result else content
 
     except Exception as e:
         logger.warning(f"humanize_article failed (using original): {e}")
@@ -765,8 +815,6 @@ def _extract_json(raw: str) -> dict | list:
         )
 
     raise ValueError(f"Cannot parse AI response as JSON\nRaw (first 500 chars): {raw[:500]}")
-
-
 # ─── Public AI Functions ──────────────────────────────────────────────────────
 
 def _continue_truncated_response(
@@ -810,6 +858,173 @@ def _continue_truncated_response(
 
 
 _CLUSTER_BATCH_SIZE = 60  # từ khóa tối ưu mỗi lô
+
+
+def improve_article_for_indexing(
+    db: Session,
+    original_html: str,
+    keywords: list[str],
+    language: str,
+    model: Optional[str] = None,
+    user_id: int = None,
+) -> str:
+    """
+    Improve an existing article to increase its chance of being indexed by Google.
+    Returns improved HTML content.
+    """
+    preferred = model or DEFAULT_OR_MODEL
+    lang_name = LANGUAGE_NAMES.get(language, "Vietnamese")
+    kw_str = ", ".join(keywords) if keywords else ""
+
+    # Truncate very long articles to stay within token budget
+    content_excerpt = original_html[:12000] if len(original_html) > 12000 else original_html
+    truncated = len(original_html) > 12000
+
+    prompt = f"""You are an expert SEO content editor. This article was published but NOT indexed by Google due to failure to meet the latest June 2026 Core and Spam Update standards (lacking original value, E-E-A-T, or looking like scaled AI generation).
+Your task: IMPROVE the existing article to recover visibility — do NOT rewrite it from scratch.
+
+TARGET KEYWORDS: {kw_str}
+LANGUAGE: {lang_name}
+{"NOTE: Only the first 12,000 characters are shown. Improve what you can see and preserve the rest." if truncated else ""}
+
+ORIGINAL ARTICLE HTML:
+{content_excerpt}
+
+IMPROVEMENT RULES (STRICT):
+1. KEEP at least 65% of the original content and structure unchanged
+2. DO NOT change the H1 title
+3. DO NOT add introductory lines like "Here is the improved article"
+4. OUTPUT: only the improved HTML — no explanation, no markdown wrapper
+
+WHAT TO IMPROVE:
+A) **Introduction & Answer Box** (first 1-2 paragraphs):
+   - Must directly answer the main search query in the first 50-60 words (bold key terms for AI Overview citation suitability).
+   - Remove any vague opener ("In today's world...", "Are you wondering...")
+   - Start with a direct, valuable, authoritative statement.
+
+B) **E-E-A-T & Evidence of Experience**:
+   - Inject clear signals of first-hand experience (e.g., real-world testing results, specific examples, direct observations, warnings based on practitioner experience).
+   - Frame points as expert opinions rather than encyclopedic definitions.
+
+C) **Thin sections** (any H2 section with < 100 words):
+   - Expand with specific examples, real numbers, or practical steps.
+   - Add at least 80-120 words of unique, non-obvious value to each thin section.
+
+D) **FAQ section**:
+   - If missing: add a complete FAQ with 4-5 questions using <h2>FAQ</h2> + <h3>Q</h3><p>A</p> format.
+   - If exists: expand to 5-6 questions with 2-3 sentence answers that are self-contained and useful.
+
+E) **Anti-Spam & Flow**:
+   - Mix short sentences (4-6 words) with longer ones (20-30 words) — never 5 same-length in a row.
+   - Remove ALL of these phrases: "Furthermore", "Moreover", "In addition", "It is worth noting",
+     "Delve into", "Leverage", "Utilize", "Comprehensive", "In conclusion".
+   - Ensure smooth transitions and add 1-2 specific facts or statistics where relevant.
+
+Output ONLY the improved HTML content. Start directly with the first HTML tag."""
+
+    messages = [
+        {"role": "system", "content": "You are an HTML content editor. Output ONLY improved HTML. No explanation, no markdown, no code blocks."},
+        {"role": "user", "content": prompt},
+    ]
+
+    try:
+        improved, used_model = smart_call(db, preferred, messages, max_tokens=6000, user_id=user_id)
+        # Clean up any accidental markdown wrappers
+        improved = improved.strip()
+        if improved.startswith("```"):
+            improved = re.sub(r"^```[a-z]*\n?", "", improved)
+            improved = re.sub(r"\n?```$", "", improved)
+        improved = clean_ai_html_content(improved)
+        logger.info("improve_article_for_indexing OK via %s (%d chars)", used_model, len(improved))
+        return improved
+    except Exception as e:
+        logger.error("improve_article_for_indexing error: %s", e)
+        raise
+
+
+def analyze_youtube_for_article(
+    db: Session,
+    video_title: str,
+    transcript: str,
+    author: str = "",
+    model: Optional[str] = None,
+    user_id: int = None,
+) -> dict:
+    """
+    Analyze a YouTube video transcript to find the best SEO keyword + article plan.
+
+    Returns dict:
+      main_keyword, secondary_keywords, intent, article_title,
+      article_angle, language, outline (list of H2 topics)
+    """
+    preferred = model or DEFAULT_OR_MODEL
+    # Truncate transcript to stay within token budget (~6000 chars ≈ 1500 tokens)
+    transcript_excerpt = transcript[:6000] if transcript else ""
+    has_transcript = bool(transcript_excerpt.strip())
+
+    prompt = f"""You are a senior SEO strategist. Analyze this YouTube video and determine the best keyword and article plan.
+
+VIDEO TITLE: {video_title}
+CHANNEL / AUTHOR: {author or 'Unknown'}
+{"TRANSCRIPT EXCERPT:" if has_transcript else "NOTE: No transcript available — base analysis on title only."}
+{transcript_excerpt if has_transcript else ""}
+
+Your task:
+1. Identify what PROBLEM or NEED this video addresses.
+2. Think like a Google searcher — what would someone type to find this content?
+3. Pick the BEST primary keyword (3-6 words, specific, high search intent).
+4. List 4-6 secondary/LSI keywords.
+5. Determine the article's H2 outline (5-7 sections).
+6. Detect the language (vi=Vietnamese, en=English, fr=French, it=Italian).
+
+Return ONLY valid JSON — no explanation, no markdown:
+{{
+  "main_keyword": "exact target keyword phrase",
+  "secondary_keywords": ["kw2", "kw3", "kw4", "kw5"],
+  "intent": "tutorial|review|comparison|informational|listicle",
+  "article_title": "SEO-optimized H1 title (different from video title, includes keyword)",
+  "article_angle": "One sentence describing the article's unique angle or focus",
+  "language": "vi",
+  "outline": [
+    "H2 section 1 title",
+    "H2 section 2 title",
+    "H2 section 3 title",
+    "H2 section 4 title",
+    "H2 section 5 title"
+  ]
+}}"""
+
+    system_msg = {"role": "system", "content": "You are a JSON API. Output ONLY valid JSON. No explanation, no markdown."}
+    messages = [system_msg, {"role": "user", "content": prompt}]
+
+    fallback = {
+        "main_keyword": video_title[:80] if video_title else "video content",
+        "secondary_keywords": [],
+        "intent": "informational",
+        "article_title": video_title or "Article",
+        "article_angle": "Comprehensive guide based on video content",
+        "language": "vi",
+        "outline": [],
+    }
+
+    for attempt in range(2):
+        try:
+            result_str, _ = smart_call(db, preferred, messages, max_tokens=600, user_id=user_id, json_mode=True)
+            data = json.loads(result_str)
+            if not data.get("main_keyword"):
+                data["main_keyword"] = fallback["main_keyword"]
+            data.setdefault("secondary_keywords", [])
+            data.setdefault("outline", [])
+            data.setdefault("language", "vi")
+            logger.info("YouTube analysis OK: keyword='%s'", data["main_keyword"])
+            return data
+        except Exception as e:
+            logger.warning("analyze_youtube_for_article attempt %d failed: %s", attempt + 1, e)
+            if attempt == 0:
+                messages.append({"role": "assistant", "content": result_str if 'result_str' in dir() else ""})
+                messages.append({"role": "user", "content": "Output ONLY valid JSON. Start with { and end with }."})
+
+    return fallback
 
 
 def analyze_search_intent_and_research(
@@ -1119,7 +1334,7 @@ def _write_article_html(
         except Exception as e:
             logger.warning(f"_write_article_html continuation failed: {e}")
 
-    return html
+    return clean_ai_html_content(html)
 
 
 def _extract_article_metadata(
@@ -1213,6 +1428,7 @@ def analyze_intent_and_write_article(
     author_persona: Optional[dict] = None,
     content_angle: Optional[dict] = None,
     research_brief: Optional[dict] = None,
+    youtube_context: Optional[dict] = None,
     user_id: int = None,
 ) -> dict:
     """
@@ -1296,28 +1512,52 @@ def analyze_intent_and_write_article(
             f"Identify the primary intent and what the article must deliver to satisfy searchers fully."
         )
 
+    youtube_section = ""
+    if youtube_context:
+        transcript_excerpt = (youtube_context.get("transcript") or "")[:5000]
+        video_title = youtube_context.get("video_title", "")
+        video_embed = youtube_context.get("embed_html", "")
+        outline = youtube_context.get("outline", [])
+        outline_str = "\n".join(f"- {h}" for h in outline) if outline else ""
+        youtube_section = (
+            f"\n## YouTube Video Source\n"
+            f"**Video title**: {video_title}\n"
+            f"**Suggested H2 outline**: \n{outline_str}\n"
+            f"**Transcript excerpt** (use as primary content source — paraphrase, do NOT copy verbatim):\n"
+            f"{transcript_excerpt}\n\n"
+            f"**IMPORTANT YouTube rules**:\n"
+            f"- Base the article on the video's actual content above\n"
+            f"- Expand, explain, and add context beyond what the video shows\n"
+            f"- Do NOT copy transcript text word-for-word\n"
+            f"- Include this video embed HTML at a natural position in the article:\n"
+            f"{video_embed}\n"
+        )
+
     # ── Phase 1 prompt — HTML only ────────────────────────────────────────────
     phase1_prompt = f"""{persona_intro}
 
-TODAY'S DATE: {current_date_str}
+TOD'S DATE: {current_date_str}
 IMPORTANT: All content must reflect {current_year} as the current year.
 
 {intent_section}
 {existing_str}
 {angle_section}
+{youtube_section}
 ## Write a Complete Article in {lang_name}
 {internal_link_str}
 
 ### Article structure (MANDATORY):
 1. **Title line** — First line of your output must be: TITLE: [your SEO-optimized title]
-2. **Answer Box** ⭐ GEO/AIO — First `<p>` tag: 50–60 word direct answer to the primary query. No preamble.
+2. **Answer Box** ⭐ GEO/AIO — First `<p>` tag: 50–60 word direct answer to the primary query. Bold key terms inside for AI Overview citation suitability. No preamble.
 3. **Introduction** — 2–3 paragraphs: relatable scenario or surprising fact, state what reader gains.
-4. **Body sections** — 4–6 `<h2>` sections with `<h3>` sub-points. Each section MUST include ≥1 specific fact/stat/number.
-5. **FAQ section** ⭐ AIO — 4–5 `<h3>` questions + `<p>` answers. Questions in exact phrasing users type. Answers: 2–3 self-contained sentences.
-6. **Conclusion** — Brief takeaways + clear CTA. End with `</p>`.{backlink_step}
+4. **Body sections** — 4–6 `<h2>` sections with `<h3>` sub-points. Every section MUST showcase clear E-E-A-T (evidence of first-hand experience, test results, specific practitioner insights/warnings, or real case studies). Avoid dry generic summaries.
+5. **Personalized Blockquotes** ⭐ E-E-A-T — Insert **1–2 blockquotes (`<blockquote>`)** contextually inside body sections containing a direct quote, warning, or advice from your persona (e.g. `<blockquote><strong>Lời khuyên từ [Tên tác giả]:</strong> "..."</blockquote>` or `<blockquote><strong>[Author's Name]'s Advice:</strong> "..."</blockquote>`). It must look like an expert quote, using the exact name of your persona.
+6. **FAQ section** ⭐ AIO — 4–5 `<h3>` questions + `<p>` answers. Questions in exact phrasing users type. Answers: 2–3 self-contained sentences containing highly actionable advice.
+7. **Conclusion** — Brief takeaways + clear CTA. End with `</p>`.{backlink_step}
 
-### Writing style — CRITICAL:
-- Mix short (3–6 word) and long (20–30 word) sentences. Never 5 same-length in a row.
+### Writing style & E-E-A-T — CRITICAL:
+- Proactively use first-hand evidence ("In my clinical testing...", "During our recent case analysis...", "Here's what I observed when...").
+- Defend against scaled AI filters: Frame advice through specific opinions or contrarian/insider tips. Mix short (3–6 word) and long (20–30 word) sentences. Never 5 same-length in a row.
 - NEVER use: "Furthermore", "Moreover", "In addition", "It is worth noting", "Delve into", "Leverage", "Utilize"
 - Use: "Here's the thing.", "And that's exactly why...", "But wait —", "The good news?", "Honestly,"
 - Include 1–2 first-person observations or mild opinions.
@@ -1396,7 +1636,7 @@ def rewrite_article(
         )
         backlink_tech = f"\n- BACKLINKS REQUIRED: these exact anchor tags MUST be in the HTML:\n{raw_lines}"
 
-    phase1_prompt = f"""The article "{title}" targeting [{kw_str}] failed to get indexed by Google. Rewrite it completely — different angle, stronger structure, more value.
+    phase1_prompt = f"""The article "{title}" targeting [{kw_str}] failed to get indexed by Google due to failure to meet E-E-A-T and spam requirements of June 2026 updates. Rewrite it completely — different angle, stronger structure, much more original value.
 
 TODAY'S DATE: {current_date_str}
 IMPORTANT: Reflect {current_year} as the current year throughout.
@@ -1406,12 +1646,13 @@ Target keywords: {kw_str}
 
 Rewrite strategy:
 1. **Title line** — First line: TITLE: [completely different angle, more specific title]
-2. **Answer Box** — First `<p>`: 50–60 word direct answer. No preamble.
-3. **Stronger intro** — relatable scenario or surprising fact, not a generic definition
-4. **Deeper content** — 1200–1800 words, 4–5 `<h2>` sections, cover topic thoroughly
-5. **FAQ** — 3–4 `<h3>` questions + `<p>` answers, self-contained sentences
-6. **Conclusion** — takeaways + CTA, end with `</p>`
-7. **Human style**: mix short/long sentences; avoid "Furthermore", "Moreover", "Delve into"{backlink_step}
+2. **Answer Box** — First `<p>`: 50–60 word direct answer. Bold key terms inside for AI Overview citation suitability. No preamble.
+3. **Stronger intro** — relatable scenario or surprising fact, not a generic definition.
+4. **Deeper E-E-A-T content** — 1200–1800 words, 4–5 `<h2>` sections. Showcase evidence of experience, direct observations, real statistics/numbers, or case analysis.
+5. **Personalized Blockquotes** — Insert **1–2 blockquotes (`<blockquote>`)** containing direct advice/insights using your author persona name (e.g. `<blockquote><strong>Lời khuyên từ [Tên tác giả]:</strong> "..."</blockquote>`).
+6. **FAQ** — 3–4 `<h3>` questions + `<p>` answers, self-contained sentences with expert advice.
+7. **Conclusion** — takeaways + CTA, end with `</p>`
+8. **Human style & Anti-Spam**: mix short/long sentences; avoid "Furthermore", "Moreover", "Delve into", "Leverage", "Utilize". Frame advice through unique points or warnings.
 
 Technical:
 - HTML tags only: h2, h3, p, ul, ol, li, strong — NO html/head/body/h1 tags

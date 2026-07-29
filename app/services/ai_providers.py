@@ -9,18 +9,18 @@ from threading import Lock
 
 logger = logging.getLogger(__name__)
 
-OPENAI_BASE = "https://api.openai.com/v1"
-GROQ_BASE   = "https://api.groq.com/openai/v1"
-GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
+OPENAI_BASE    = "https://api.openai.com/v1"
+GROQ_BASE      = "https://api.groq.com/openai/v1"
+GEMINI_BASE    = "https://generativelanguage.googleapis.com/v1beta/openai"
+ANTHROPIC_BASE = "https://api.anthropic.com"
 
 # ─── Model Lists ──────────────────────────────────────────────────────────────
 
 GEMINI_MODELS = [
-    {"id": "gemini:gemini-2.0-flash",        "name": "Gemini 2.0 Flash (Nhanh · 1500/ngày) — Google"},
-    {"id": "gemini:gemini-2.5-flash-preview-04-17", "name": "Gemini 2.5 Flash Preview (Mạnh nhất free) — Google"},
+    {"id": "gemini:gemini-3.6-flash",        "name": "Gemini 3.6 Flash (Nhanh, Hiệu suất cao GA) — Google"},
+    {"id": "gemini:gemini-3.5-flash-lite",   "name": "Gemini 3.5 Flash-Lite (Tối ưu chi phí, Độ trễ thấp) — Google"},
     {"id": "gemini:gemini-1.5-flash",        "name": "Gemini 1.5 Flash (Ổn định) — Google"},
-    {"id": "gemini:gemini-2.5-pro-preview-05-06", "name": "Gemini 2.5 Pro Preview (25/ngày) — Google"},
-    {"id": "gemini:gemini-1.5-pro",          "name": "Gemini 1.5 Pro (50/ngày) — Google"},
+    {"id": "gemini:gemini-1.5-pro",          "name": "Gemini 1.5 Pro (Mạnh mẽ, 50/ngày) — Google"},
 ]
 
 CLAUDE_MODELS = [
@@ -33,15 +33,11 @@ CLAUDE_MODELS = [
 OPENAI_MODELS = [
     {"id": "openai:gpt-4o",        "name": "GPT-4o (Tốt nhất) — OpenAI"},
     {"id": "openai:gpt-4o-mini",   "name": "GPT-4o Mini (Nhanh/Rẻ) — OpenAI"},
-    {"id": "openai:gpt-4-turbo",   "name": "GPT-4 Turbo — OpenAI"},
-    {"id": "openai:gpt-3.5-turbo", "name": "GPT-3.5 Turbo (Rẻ nhất) — OpenAI"},
 ]
 
 GROQ_MODELS = [
     {"id": "groq:llama-3.3-70b-versatile", "name": "Llama 3.3 70B (Tốt nhất) — Groq"},
     {"id": "groq:llama-3.1-8b-instant",    "name": "Llama 3.1 8B (Nhanh nhất) — Groq"},
-    {"id": "groq:mixtral-8x7b-32768",      "name": "Mixtral 8x7B — Groq"},
-    {"id": "groq:gemma2-9b-it",            "name": "Gemma 2 9B — Groq"},
 ]
 
 ALL_PAID_MODELS = GEMINI_MODELS + CLAUDE_MODELS + OPENAI_MODELS + GROQ_MODELS
@@ -150,7 +146,8 @@ def call_gemini(keys_str: str, model: str, messages: list, max_tokens: int = 400
 
 # ─── Claude ───────────────────────────────────────────────────────────────────
 
-def call_claude(api_key: str, model: str, messages: list, max_tokens: int = 4000) -> str:
+def call_claude(api_key: str, model: str, messages: list, max_tokens: int = 4000, base_url: str = None) -> str:
+    base = (base_url or ANTHROPIC_BASE).rstrip("/")
     headers = {
         "x-api-key":         api_key,
         "anthropic-version": "2023-06-01",
@@ -168,7 +165,7 @@ def call_claude(api_key: str, model: str, messages: list, max_tokens: int = 4000
         payload["system"] = system_msg
 
     with httpx.Client(timeout=120) as c:
-        resp = c.post("https://api.anthropic.com/v1/messages", headers=headers, json=payload)
+        resp = c.post(f"{base}/v1/messages", headers=headers, json=payload)
         resp.raise_for_status()
         data = resp.json()
     text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
@@ -209,16 +206,34 @@ def call_groq(api_key: str, model: str, messages: list, max_tokens: int = 4000) 
 
 # ─── Test connection ──────────────────────────────────────────────────────────
 
-def test_connection(provider: str, api_key: str) -> dict:
+def test_connection(provider: str, api_key: str, base_url: str = None) -> dict:
     """Test a single API key. Returns {"ok": bool, "message": str}."""
     test_msg = [{"role": "user", "content": "Reply with exactly: OK"}]
     try:
         if provider == "gemini":
-            model = "gemini-2.0-flash"
+            model = "gemini-3.6-flash"
             result = _call_gemini_single(api_key, model, test_msg, max_tokens=10)
         elif provider == "claude":
-            model = "claude-haiku-4-5-20251001"
-            result = call_claude(api_key, model, test_msg, max_tokens=10)
+            # Thử các model phổ thông — proxy và Anthropic chính thức có ID khác nhau
+            claude_models = [
+                "claude-haiku-4-5",           # proxy alias
+                "claude-haiku-4-5-20251001",  # Anthropic chính thức
+                "claude-sonnet-4-6",
+                "claude-opus-4-6",
+                "claude-opus-4-8",
+            ]
+            result = None
+            model = claude_models[0]
+            for model in claude_models:
+                try:
+                    result = call_claude(api_key, model, test_msg, max_tokens=10, base_url=base_url)
+                    break
+                except httpx.HTTPStatusError as _me:
+                    if _me.response.status_code in (404, 400):
+                        continue
+                    raise
+            if result is None:
+                return {"ok": False, "message": "Không tìm thấy model khả dụng trên endpoint này."}
         elif provider == "openai":
             model = "gpt-4o-mini"
             result = call_openai(api_key, model, test_msg, max_tokens=10)
@@ -230,14 +245,15 @@ def test_connection(provider: str, api_key: str) -> dict:
         return {"ok": True, "message": f"Kết nối thành công! ({model}) → {result[:40]}"}
     except httpx.HTTPStatusError as e:
         status = e.response.status_code
+        try:
+            err_body = e.response.json()
+            err_msg = (err_body.get("error", {}) or {}).get("message", "") or str(err_body)
+        except Exception:
+            err_msg = e.response.text[:200]
         if status == 401:
-            return {"ok": False, "message": "API key không hợp lệ (401 Unauthorized)"}
+            return {"ok": False, "message": f"API key không hợp lệ (401). Chi tiết: {err_msg[:150]}"}
         if status == 429:
             return {"ok": False, "message": "Key hợp lệ nhưng đang bị rate limit (429)."}
-        try:
-            msg = e.response.json().get("error", {}).get("message", str(e))
-        except Exception:
-            msg = str(e)
-        return {"ok": False, "message": f"Lỗi {status}: {msg[:120]}"}
+        return {"ok": False, "message": f"Lỗi {status}: {err_msg[:150]}"}
     except Exception as e:
-        return {"ok": False, "message": f"Lỗi: {str(e)[:120]}"}
+        return {"ok": False, "message": f"Lỗi: {str(e)[:150]}"}

@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AutoBlogspot — Color Mockup Preview</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f5f5f5; }
+
+    /* ===== SELECTOR BAR ===== */
+    .selector {
+      position: sticky; top: 0; z-index: 100;
+      background: #1e1e2e; color: #fff;
+      padding: 14px 24px;
+      display: flex; align-items: center; gap: 12px;
+      flex-wrap: wrap;
+      box-shadow: 0 2px 12px rgba(0,0,0,.4);
+    }
+    .selector span { font-weight: 600; font-size: 14px; opacity: .7; margin-right: 4px; }
+    .tab {
+      padding: 7px 18px; border-radius: 999px; border: none; cursor: pointer;
+      font-size: 13px; font-weight: 600; transition: all .2s;
+    }
+    .tab:not(.active) { background: rgba(255,255,255,.1); color: #ccc; }
+    .tab:not(.active):hover { background: rgba(255,255,255,.2); color: #fff; }
+
+    /* ===== THEME PANELS ===== */
+    .theme-panel { display: none; }
+    .theme-panel.active { display: block; }
+
+    /* ========================================
+       THEME 1: SKY BLUE & WHITE
+       ======================================== */
+    .t1 { --bg: #f0f7ff; --hero-from: #e8f4ff; --hero-to: #d6ebff;
+          --nav-bg: #ffffff; --nav-border: #dbeafe;
+          --accent: #2563eb; --accent2: #3b82f6; --accent-soft: #eff6ff;
+          --text: #1e293b; --muted: #64748b; --card-bg: #ffffff;
+          --card-border: #e2eaf5; --badge-bg: #dbeafe; --badge-text: #1d4ed8;
+          --stat-bg: #f8fbff; }
+
+    /* ========================================
+       THEME 2: FRESH MINT & EMERALD
+       ======================================== */
+    .t2 { --bg: #f0fdf7; --hero-from: #e6faf2; --hero-to: #d1fae5;
+          --nav-bg: #ffffff; --nav-border: #a7f3d0;
+          --accent: #059669; --accent2: #10b981; --accent-soft: #ecfdf5;
+          --text: #064e3b; --muted: #6b7280; --card-bg: #ffffff;
+          --card-border: #bbf7d0; --badge-bg: #d1fae5; --badge-text: #065f46;
+          --stat-bg: #f6fef9; }
+
+    /* ========================================
+       THEME 3: CORAL SUNRISE
+       ======================================== */
+    .t3 { --bg: #fff7f5; --hero-from: #fff1ed; --hero-to: #ffe4dc;
+          --nav-bg: #ffffff; --nav-border: #fed7c7;
+          --accent: #ea580c; --accent2: #f97316; --accent-soft: #fff7ed;
+          --text: #431407; --muted: #78716c; --card-bg: #ffffff;
+          --card-border: #fed7c7; --badge-bg: #ffedd5; --badge-text: #c2410c;
+          --stat-bg: #fffaf8; }
+
+    /* ========================================
+       THEME 4: PURPLE DREAMS (Lavender)
+       ======================================== */
+    .t4 { --bg: #f5f3ff; --hero-from: #ede9fe; --hero-to: #ddd6fe;
+          --nav-bg: #ffffff; --nav-border: #c4b5fd;
+          --accent: #7c3aed; --accent2: #8b5cf6; --accent-soft: #f5f3ff;
+          --text: #2e1065; --muted: #6b7280; --card-bg: #ffffff;
+          --card-border: #ddd6fe; --badge-bg: #ede9fe; --badge-text: #6d28d9;
+          --stat-bg: #faf9ff; }
+
+    /* ===== SHARED LAYOUT ===== */
+    .theme-wrapper {
+      background: var(--bg);
+      min-height: 100vh;
+      color: var(--text);
+    }
+
+    /* Label */
+    .theme-label {
+      text-align: center; padding: 10px;
+      font-size: 12px; font-weight: 700; letter-spacing: 2px;
+      text-transform: uppercase; background: var(--accent); color: #fff;
+    }
+
+    /* Navbar */
+    .t-nav {
+      background: var(--nav-bg);
+      border-bottom: 1px solid var(--nav-border);
+      padding: 0 40px;
+      height: 64px;
+      display: flex; align-items: center; justify-content: space-between;
+      box-shadow: 0 1px 3px rgba(0,0,0,.06);
+      position: sticky; top: 36px;
+    }
+    .t-nav-logo {
+      font-size: 18px; font-weight: 800; color: var(--accent);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .t-nav-logo .logo-icon {
+      width: 32px; height: 32px; border-radius: 8px;
+      background: var(--accent); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+    }
+    .t-nav-badge {
+      background: var(--badge-bg); color: var(--badge-text);
+      font-size: 10px; font-weight: 700; padding: 2px 7px;
+      border-radius: 999px; letter-spacing: .5px;
+    }
+    .t-nav-links { display: flex; gap: 28px; }
+    .t-nav-links a { text-decoration: none; color: var(--muted); font-size: 14px; font-weight: 500; }
+    .t-nav-links a:hover { color: var(--accent); }
+    .t-nav-cta {
+      background: var(--accent); color: #fff;
+      border: none; padding: 9px 20px; border-radius: 8px;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+
+    /* Hero */
+    .t-hero {
+      background: linear-gradient(145deg, var(--hero-from), var(--hero-to));
+      padding: 80px 40px 90px;
+      text-align: center;
+      position: relative; overflow: hidden;
+    }
+    .t-hero::before {
+      content: '';
+      position: absolute; top: -80px; right: -80px;
+      width: 300px; height: 300px; border-radius: 50%;
+      background: var(--accent); opacity: .07;
+    }
+    .t-hero::after {
+      content: '';
+      position: absolute; bottom: -60px; left: -60px;
+      width: 240px; height: 240px; border-radius: 50%;
+      background: var(--accent2); opacity: .08;
+    }
+    .t-hero-badge {
+      display: inline-block;
+      background: var(--badge-bg); color: var(--badge-text);
+      padding: 5px 14px; border-radius: 999px;
+      font-size: 12px; font-weight: 700; margin-bottom: 20px;
+      letter-spacing: .5px;
+    }
+    .t-hero h1 {
+      font-size: clamp(2rem, 5vw, 3.5rem); font-weight: 800;
+      color: var(--text); line-height: 1.15; margin-bottom: 18px;
+    }
+    .t-hero h1 span { color: var(--accent); }
+    .t-hero p {
+      font-size: 16px; color: var(--muted); max-width: 560px;
+      margin: 0 auto 32px; line-height: 1.7;
+    }
+    .t-hero-btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+    .btn-primary {
+      background: var(--accent); color: #fff;
+      border: none; padding: 13px 28px; border-radius: 10px;
+      font-size: 15px; font-weight: 600; cursor: pointer;
+      box-shadow: 0 4px 14px rgba(0,0,0,.15);
+    }
+    .btn-outline {
+      background: transparent; color: var(--accent);
+      border: 2px solid var(--accent); padding: 11px 24px; border-radius: 10px;
+      font-size: 15px; font-weight: 600; cursor: pointer;
+    }
+
+    /* Stats band */
+    .t-stats {
+      background: var(--stat-bg);
+      border-top: 1px solid var(--card-border);
+      border-bottom: 1px solid var(--card-border);
+      padding: 32px 40px;
+      display: flex; justify-content: center; gap: 60px; flex-wrap: wrap;
+    }
+    .t-stat { text-align: center; }
+    .t-stat-num { font-size: 28px; font-weight: 800; color: var(--accent); }
+    .t-stat-lbl { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+    /* Platforms */
+    .t-section { padding: 60px 40px; max-width: 1100px; margin: 0 auto; }
+    .t-section-title {
+      text-align: center; font-size: 26px; font-weight: 800;
+      color: var(--text); margin-bottom: 8px;
+    }
+    .t-section-sub { text-align: center; color: var(--muted); font-size: 15px; margin-bottom: 40px; }
+    .t-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; }
+    .t-card {
+      background: var(--card-bg);
+      border: 1.5px solid var(--card-border);
+      border-radius: 14px; padding: 24px 20px;
+      text-align: center; transition: transform .2s, box-shadow .2s;
+    }
+    .t-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,.08); }
+    .t-card-icon {
+      width: 48px; height: 48px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px; margin: 0 auto 12px;
+    }
+    .t-card h3 { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .t-card p { font-size: 12px; color: var(--muted); }
+    .t-card-border-top { border-top: 3px solid; }
+
+    /* Features */
+    .t-features { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; }
+    .t-feature {
+      background: var(--card-bg);
+      border: 1.5px solid var(--card-border);
+      border-radius: 14px; padding: 24px;
+    }
+    .t-feature-icon {
+      width: 44px; height: 44px; border-radius: 10px;
+      background: var(--accent-soft); color: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; margin-bottom: 14px;
+    }
+    .t-feature h4 { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+    .t-feature p { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+    /* Pricing */
+    .t-pricing { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+    .t-price-card {
+      background: var(--card-bg);
+      border: 2px solid var(--card-border);
+      border-radius: 16px; padding: 28px 24px;
+    }
+    .t-price-card.featured {
+      background: var(--accent); color: #fff;
+      border-color: var(--accent);
+      transform: scale(1.02);
+    }
+    .t-price-card.featured .t-price-muted { color: rgba(255,255,255,.75); }
+    .t-price-name { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+    .t-price-amt { font-size: 36px; font-weight: 800; margin-bottom: 2px; }
+    .t-price-muted { font-size: 13px; color: var(--muted); margin-bottom: 20px; }
+    .t-price-list { list-style: none; font-size: 13px; }
+    .t-price-list li { padding: 5px 0; display: flex; align-items: center; gap: 8px; }
+    .t-price-list li::before { content: '✓'; color: var(--accent); font-weight: 700; }
+    .t-price-card.featured .t-price-list li::before { color: rgba(255,255,255,.9); }
+    .t-price-btn {
+      display: block; width: 100%; margin-top: 20px;
+      padding: 11px; border-radius: 9px; font-size: 14px; font-weight: 600;
+      border: 2px solid var(--accent); background: transparent;
+      color: var(--accent); cursor: pointer; text-align: center;
+    }
+    .t-price-card.featured .t-price-btn {
+      background: rgba(255,255,255,.2); border-color: rgba(255,255,255,.5); color: #fff;
+    }
+
+    /* Dashboard preview */
+    .t-dashboard {
+      padding: 40px;
+      background: var(--bg);
+    }
+    .db-frame {
+      background: var(--card-bg);
+      border: 1.5px solid var(--card-border);
+      border-radius: 16px; overflow: hidden;
+      box-shadow: 0 8px 30px rgba(0,0,0,.08);
+      max-width: 900px; margin: 0 auto;
+    }
+    .db-topbar {
+      background: var(--nav-bg); border-bottom: 1px solid var(--nav-border);
+      padding: 12px 20px; display: flex; align-items: center; gap: 16px;
+      font-size: 13px;
+    }
+    .db-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .db-title { font-weight: 600; color: var(--text); flex: 1; }
+    .db-user {
+      background: var(--accent-soft); color: var(--accent);
+      padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600;
+    }
+    .db-body { display: flex; }
+    .db-sidebar {
+      width: 200px; flex-shrink: 0;
+      background: var(--accent-soft);
+      border-right: 1px solid var(--nav-border);
+      padding: 16px 0;
+    }
+    .db-nav-item {
+      padding: 9px 20px; font-size: 13px; color: var(--muted);
+      display: flex; align-items: center; gap: 10px; cursor: pointer;
+    }
+    .db-nav-item.active {
+      background: var(--accent); color: #fff;
+      border-radius: 0 8px 8px 0; margin-right: 10px;
+    }
+    .db-content { flex: 1; padding: 20px; }
+    .db-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+    .db-stat-card {
+      background: var(--stat-bg); border: 1px solid var(--card-border);
+      border-radius: 10px; padding: 14px;
+    }
+    .db-stat-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    .db-stat-value { font-size: 22px; font-weight: 800; color: var(--accent); }
+    .db-table {
+      background: var(--stat-bg); border: 1px solid var(--card-border);
+      border-radius: 10px; overflow: hidden;
+    }
+    .db-table-header {
+      padding: 10px 14px; font-size: 11px; font-weight: 700;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 1px;
+      border-bottom: 1px solid var(--card-border);
+      display: grid; grid-template-columns: 2fr 1fr 1fr;
+    }
+    .db-table-row {
+      padding: 10px 14px; font-size: 13px;
+      display: grid; grid-template-columns: 2fr 1fr 1fr;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .db-table-row:last-child { border-bottom: none; }
+    .db-badge {
+      display: inline-block; padding: 2px 8px;
+      border-radius: 999px; font-size: 11px; font-weight: 600;
+    }
+    .db-badge.published { background: #d1fae5; color: #065f46; }
+    .db-badge.draft { background: #fef9c3; color: #854d0e; }
+
+    /* Footer */
+    .t-footer {
+      background: var(--accent);
+      color: rgba(255,255,255,.85);
+      padding: 40px;
+      text-align: center;
+    }
+    .t-footer-logo { font-size: 20px; font-weight: 800; color: #fff; margin-bottom: 8px; }
+    .t-footer p { font-size: 13px; margin-bottom: 16px; }
+    .t-footer-links { display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; }
+    .t-footer-links a { color: rgba(255,255,255,.7); text-decoration: none; font-size: 13px; }
+
+    /* Divider */
+    .section-divider {
+      height: 2px;
+      background: linear-gradient(to right, transparent, var(--card-border), transparent);
+    }
+
+    /* Palette chip row */
+    .palette-row {
+      display: flex; justify-content: center; gap: 10px; padding: 20px;
+      background: var(--card-bg); border-bottom: 1px solid var(--card-border);
+      flex-wrap: wrap; align-items: center;
+    }
+    .palette-label { font-size: 12px; font-weight: 700; color: var(--muted); margin-right: 4px; }
+    .chip {
+      width: 32px; height: 32px; border-radius: 8px;
+      border: 2px solid var(--card-border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; color: #fff; font-weight: 700;
+      cursor: help;
+    }
+    .chip-name {
+      font-size: 11px; color: var(--muted); font-weight: 500;
+    }
+    .chip-group { display: flex; align-items: center; gap: 5px; }
+  </style>
+</head>
+<body>
+
+<!-- TAB SELECTOR -->
+<div class="selector">
+  <span>🎨 Chọn bảng màu:</span>
+  <button class="tab active" id="tab-t1" onclick="show('t1')"
+    style="background:#2563eb;color:#fff;">
+    ☁️ Sky Blue
+  </button>
+  <button class="tab" id="tab-t2" onclick="show('t2')"
+    style="background:rgba(255,255,255,.1);color:#ccc;">
+    🌿 Fresh Mint
+  </button>
+  <button class="tab" id="tab-t3" onclick="show('t3')"
+    style="background:rgba(255,255,255,.1);color:#ccc;">
+    🌅 Coral Sunrise
+  </button>
+  <button class="tab" id="tab-t4" onclick="show('t4')"
+    style="background:rgba(255,255,255,.1);color:#ccc;">
+    🔮 Purple Dreams
+  </button>
+</div>
+
+<!-- ============================================================
+     THEME 1: SKY BLUE & WHITE
+     ============================================================ -->
+<div id="panel-t1" class="theme-panel t1 active">
+  <div class="theme-wrapper">
+    <div class="theme-label">☁️ Theme 1 — SKY BLUE &amp; WHITE &nbsp;|&nbsp; Chuyên nghiệp · Tin cậy · Hiện đại</div>
+
+    <!-- Palette -->
+    <div class="palette-row">
+      <span class="palette-label">Bảng màu:</span>
+      <div class="chip-group"><div class="chip" style="background:#2563eb;" title="#2563eb"></div><span class="chip-name">Accent Blue</span></div>
+      <div class="chip-group"><div class="chip" style="background:#3b82f6;" title="#3b82f6"></div><span class="chip-name">Light Blue</span></div>
+      <div class="chip-group"><div class="chip" style="background:#f0f7ff;border-color:#bfdbfe;" title="#f0f7ff"><span style="color:#2563eb">bg</span></div><span class="chip-name">Background</span></div>
+      <div class="chip-group"><div class="chip" style="background:#1e293b;" title="#1e293b"></div><span class="chip-name">Text</span></div>
+      <div class="chip-group"><div class="chip" style="background:#eff6ff;border-color:#bfdbfe;" title="#eff6ff"><span style="color:#2563eb">sf</span></div><span class="chip-name">Soft Blue</span></div>
+    </div>
+
+    <!-- Navbar -->
+    <nav class="t-nav">
+      <div class="t-nav-logo">
+        <div class="logo-icon">✍</div>
+        AutoBlogspot <span class="t-nav-badge">AI</span>
+      </div>
+      <div class="t-nav-links">
+        <a href="#">Tính năng</a><a href="#">Nền tảng</a><a href="#">Bảng giá</a><a href="#">FAQ</a>
+      </div>
+      <button class="t-nav-cta">Bắt đầu miễn phí</button>
+    </nav>
+
+    <!-- Hero -->
+    <section class="t-hero">
+      <div class="t-hero-badge">🚀 Mới: Hỗ trợ 5 nền tảng</div>
+      <h1>Tự động đăng bài<br><span>thông minh với AI</span></h1>
+      <p>Viết nội dung, lên lịch và đăng bài lên Blogspot, WordPress, Tumblr, Hashnode tự động. Tiết kiệm 90% thời gian.</p>
+      <div class="t-hero-btns">
+        <button class="btn-primary">🚀 Dùng thử miễn phí</button>
+        <button class="btn-outline">Xem demo →</button>
+      </div>
+    </section>
+
+    <!-- Stats -->
+    <div class="t-stats">
+      <div class="t-stat"><div class="t-stat-num">10,000+</div><div class="t-stat-lbl">Bài viết đã đăng</div></div>
+      <div class="t-stat"><div class="t-stat-num">500+</div><div class="t-stat-lbl">Người dùng</div></div>
+      <div class="t-stat"><div class="t-stat-num">5</div><div class="t-stat-lbl">Nền tảng hỗ trợ</div></div>
+      <div class="t-stat"><div class="t-stat-num">99.9%</div><div class="t-stat-lbl">Uptime</div></div>
+    </div>
+
+    <!-- Platforms -->
+    <div class="t-section">
+      <div class="t-section-title">Nền tảng hỗ trợ</div>
+      <div class="t-section-sub">Đăng bài lên nhiều nền tảng cùng lúc chỉ với 1 click</div>
+      <div class="t-cards">
+        <div class="t-card t-card-border-top" style="border-top-color:#EA4335">
+          <div class="t-card-icon" style="background:#FEF2F2;color:#EA4335;">📝</div>
+          <h3>Blogspot</h3><p>Google Blogger API</p>
+        </div>
+        <div class="t-card t-card-border-top" style="border-top-color:#0073AA">
+          <div class="t-card-icon" style="background:#EFF6FF;color:#0073AA;">🌐</div>
+          <h3>WordPress</h3><p>REST API v2</p>
+        </div>
+        <div class="t-card t-card-border-top" style="border-top-color:#35465C">
+          <div class="t-card-icon" style="background:#F1F5F9;color:#35465C;">💙</div>
+          <h3>Tumblr</h3><p>Tumblr API v2</p>
+        </div>
+        <div class="t-card t-card-border-top" style="border-top-color:#F7C948">
+          <div class="t-card-icon" style="background:#FFFBEB;color:#92400E;">⚡</div>
+          <h3>Hashnode</h3><p>GraphQL API</p>
+        </div>
+        <div class="t-card t-card-border-top" style="border-top-color:#1DA1F2">
+          <div class="t-card-icon" style="background:#EFF6FF;color:#1DA1F2;">🐦</div>
+          <h3>Twitter/X</h3><p>Twitter API v2</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-divider"></div>
+
+    <!-- Features -->
+    <div class="t-section">
+      <div class="t-section-title">Tính năng nổi bật</div>
+      <div class="t-section-sub">Mọi thứ bạn cần để tự động hóa blog</div>
+      <div class="t-features">
+        <div class="t-feature">
+          <div class="t-feature-icon">🤖</div>
+          <h4>AI Viết bài</h4>
+          <p>Tự động tạo nội dung chất lượng cao với Claude AI, tối ưu SEO.</p>
+        </div>
+        <div class="t-feature">
+          <div class="t-feature-icon">📅</div>
+          <h4>Lên lịch thông minh</h4>
+          <p>Đăng bài đúng giờ vàng, tự động theo lịch bạn thiết lập.</p>
+        </div>
+        <div class="t-feature">
+          <div class="t-feature-icon">📊</div>
+          <h4>Phân tích hiệu suất</h4>
+          <p>Theo dõi lượt xem, tương tác và tối ưu chiến lược nội dung.</p>
+        </div>
+        <div class="t-feature">
+          <div class="t-feature-icon">🌍</div>
+          <h4>Đa ngôn ngữ</h4>
+          <p>Hỗ trợ Tiếng Việt, English và nhiều ngôn ngữ khác.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-divider"></div>
+
+    <!-- Pricing -->
+    <div class="t-section">
+      <div class="t-section-title">Bảng giá</div>
+      <div class="t-section-sub">Bắt đầu miễn phí, nâng cấp khi cần</div>
+      <div class="t-pricing">
+        <div class="t-price-card">
+          <div class="t-price-name">Free Trial</div>
+          <div class="t-price-amt">$0</div>
+          <div class="t-price-muted">/ 7 ngày</div>
+          <ul class="t-price-list">
+            <li>5 bài viết / ngày</li><li>1 nền tảng</li><li>AI cơ bản</li>
+          </ul>
+          <button class="t-price-btn">Dùng thử</button>
+        </div>
+        <div class="t-price-card featured">
+          <div class="t-price-name">Pro ⭐</div>
+          <div class="t-price-amt">$19</div>
+          <div class="t-price-muted">/ tháng</div>
+          <ul class="t-price-list">
+            <li>Không giới hạn bài</li><li>3 nền tảng</li><li>AI nâng cao</li><li>Lên lịch thông minh</li>
+          </ul>
+          <button class="t-price-btn">Đăng ký ngay</button>
+        </div>
+        <div class="t-price-card">
+          <div class="t-price-name">Business</div>
+          <div class="t-price-amt">$49</div>
+          <div class="t-price-muted">/ tháng</div>
+          <ul class="t-price-list">
+            <li>Không giới hạn</li><li>5 nền tảng</li><li>Team 5 người</li><li>API access</li>
+          </ul>
+          <button class="t-price-btn">Liên hệ</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dashboard Preview -->
+    <div class="t-dashboard">
+      <div class="t-section-title" style="margin-bottom:20px;">Giao diện Dashboard</div>
+      <div class="db-frame">
+        <div class="db-topbar">
+          <div class="db-dot" style="background:#f87171;"></div>
+          <div class="db-dot" style="background:#fbbf24;"></div>
+          <div class="db-dot" style="background:#34d399;"></div>
+          <div class="db-title">AutoBlogspot Dashboard</div>
+          <div class="db-user">👤 Nguyễn Văn A</div>
+        </div>
+        <div class="db-body">
+          <div class="db-sidebar">
+            <div class="db-nav-item active">📊 Tổng quan</div>
+            <div class="db-nav-item">📝 Bài viết</div>
+            <div class="db-nav-item">📅 Lịch đăng</div>
+            <div class="db-nav-item">⚙️ Cài đặt</div>
+          </div>
+          <div class="db-content">
+            <div class="db-stats">
+              <div class="db-stat-card">
+                <div class="db-stat-label">Bài đã đăng</div>
+                <div class="db-stat-value">128</div>
+              </div>
+              <div class="db-stat-card">
+                <div class="db-stat-label">Hôm nay</div>
+                <div class="db-stat-value">12</div>
+              </div>
+              <div class="db-stat-card">
+                <div class="db-stat-label">Nền tảng</div>
+                <div class="db-stat-value">3</div>
+              </div>
+            </div>
+            <div class="db-table">
+              <div class="db-table-header"><span>Bài viết</span><span>Nền tảng</span><span>Trạng thái</span></div>
+              <div class="db-table-row"><span>Hướng dẫn SEO 2025</span><span>Blogspot</span><span><div class="db-badge published">Đã đăng</div></span></div>
+              <div class="db-table-row"><span>Top 10 công cụ AI</span><span>WordPress</span><span><div class="db-badge draft">Nháp</div></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="t-footer">
+      <div class="t-footer-logo">✍ AutoBlogspot</div>
+      <p>Tự động hóa blog của bạn với sức mạnh AI</p>
+      <div class="t-footer-links">
+        <a href="#">Điều khoản</a><a href="#">Bảo mật</a><a href="#">Liên hệ</a><a href="#">Blog</a>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<!-- ============================================================
+     THEME 2: FRESH MINT & EMERALD
+     ============================================================ -->
+<div id="panel-t2" class="theme-panel t2">
+  <div class="theme-wrapper">
+    <div class="theme-label">🌿 Theme 2 — FRESH MINT &amp; EMERALD &nbsp;|&nbsp; Năng động · Tươi mới · Sáng tạo</div>
+    <div class="palette-row">
+      <span class="palette-label">Bảng màu:</span>
+      <div class="chip-group"><div class="chip" style="background:#059669;" title="#059669"></div><span class="chip-name">Emerald</span></div>
+      <div class="chip-group"><div class="chip" style="background:#10b981;" title="#10b981"></div><span class="chip-name">Mint</span></div>
+      <div class="chip-group"><div class="chip" style="background:#f0fdf7;border-color:#a7f3d0;" title="#f0fdf7"><span style="color:#059669">bg</span></div><span class="chip-name">Mint BG</span></div>
+      <div class="chip-group"><div class="chip" style="background:#064e3b;" title="#064e3b"></div><span class="chip-name">Deep Green</span></div>
+      <div class="chip-group"><div class="chip" style="background:#d1fae5;border-color:#a7f3d0;" title="#d1fae5"><span style="color:#059669">sf</span></div><span class="chip-name">Soft Mint</span></div>
+    </div>
+    <nav class="t-nav">
+      <div class="t-nav-logo"><div class="logo-icon">✍</div>AutoBlogspot <span class="t-nav-badge">AI</span></div>
+      <div class="t-nav-links"><a href="#">Tính năng</a><a href="#">Nền tảng</a><a href="#">Bảng giá</a><a href="#">FAQ</a></div>
+      <button class="t-nav-cta">Bắt đầu miễn phí</button>
+    </nav>
+    <section class="t-hero">
+      <div class="t-hero-badge">🌿 Xanh - Sạch - Hiệu quả</div>
+      <h1>Blog thông minh,<br><span>Kết quả vượt trội</span></h1>
+      <p>Tạo, lên lịch và đăng bài lên 5 nền tảng lớn nhất. Tự động 100% với AI tiên tiến nhất.</p>
+      <div class="t-hero-btns">
+        <button class="btn-primary">🚀 Dùng thử miễn phí</button>
+        <button class="btn-outline">Xem demo →</button>
+      </div>
+    </section>
+    <div class="t-stats">
+      <div class="t-stat"><div class="t-stat-num">10,000+</div><div class="t-stat-lbl">Bài viết đã đăng</div></div>
+      <div class="t-stat"><div class="t-stat-num">500+</div><div class="t-stat-lbl">Người dùng</div></div>
+      <div class="t-stat"><div class="t-stat-num">5</div><div class="t-stat-lbl">Nền tảng hỗ trợ</div></div>
+      <div class="t-stat"><div class="t-stat-num">99.9%</div><div class="t-stat-lbl">Uptime</div></div>
+    </div>
+    <div class="t-section">
+      <div class="t-section-title">Nền tảng hỗ trợ</div>
+      <div class="t-section-sub">Đăng bài lên nhiều nền tảng cùng lúc</div>
+      <div class="t-cards">
+        <div class="t-card t-card-border-top" style="border-top-color:#EA4335"><div class="t-card-icon" style="background:#FEF2F2;color:#EA4335;">📝</div><h3>Blogspot</h3><p>Google Blogger API</p></div>
+        <div class="t-card t-card-border-top" style="border-top-color:#0073AA"><div class="t-card-icon" style="background:#EFF6FF;color:#0073AA;">🌐</div><h3>WordPress</h3><p>REST API v2</p></div>
+        <div class="t-card t-card-border-top" style="border-top-color:#35465C"><div class="t-card-icon" style="background:#F1F5F9;color:#35465C;">💙</div><h3>Tumblr</h3><p>Tumblr API v2</p></div>
+        <div class="t-card t-card-border-top" style="border-top-color:#F7C948"><div class="t-card-icon" style="background:#FFFBEB;color:#92400E;">⚡</div><h3>Hashnode</h3><p>GraphQL API</p></div>
+        <div class="t-card t-card-border-top" style="border-top-color:#1DA1F2"><div class="t-card-icon" style="background:#EFF6FF;color:#1DA1F2;">🐦</div><h3>Twitter/X</h3><p>Twitter API v2</p></div>
+      </div>
+    </div>
+    <div class="section-divider"></div>
+    <div class="t-section">
+      <div class="t-section-title">Tính năng nổi bật</div>
+      <div class="t-section-sub">Mọi thứ bạn cần để tự động hóa blog</div>
+      <div class="t-features">
+        <div class="t-feature"><div class="t-feature-icon">🤖</div><h4>AI Viết bài</h4><p>Tự động tạo nội dung chất lượng cao với Claude AI.</p></div>
+        <div class="t-feature"><div class="t-feature-icon">📅</div><h4>Lên lịch thông minh</h4><p>Đăng bài đúng giờ vàng, tự động theo lịch bạn thiết lập.</p></div>
+        <div class="t-feature"><div class="t-feature-icon">📊</div><h4>Phân tích hiệu suất</h4><p>Theo dõi lượt xem và tối ưu chiến lược nội dung.</p></div>
+        <div class="t-feature"><div class="t-feature-icon">🌍</div><h4>Đa ngôn ngữ</h4><p>Hỗ trợ Tiếng Việt, English và nhiều ngôn ngữ khác.</p></div>
+      </div>
+    </div>
+    <div class="section-divider"></div>
+    <div class="t-section">
+      <div class="t-section-title">Bảng giá</div>
+      <div class="t-section-sub">Bắt đầu miễn phí, nâng cấp khi cần</div>
+      <div class="t-pricing">
+        <div class="t-price-card"><div class="t-price-name">Free Trial</div><div class="t-price-amt">$0</div><div class="t-price-muted">/ 7 ngày</div><ul class="t-price-list"><li>5 bài viết / ngày</li><li>1 nền tảng</li><li>AI cơ bản</li></ul><button class="t-price-btn">Dùng thử</button></div>
+        <div class="t-price-card featured"><div class="t-price-name">Pro ⭐</div><div class="t-price-amt">$19</div><div class="t-price-muted">/ tháng</div><ul class="t-price-list"><li>Không giới hạn bài</li><li>3 nền tảng</li><li>AI nâng cao</li><li>Lên lịch thông minh</li></ul><button class="t-price-btn">Đăng ký ngay</button></div>
+        <div class="t-price-card"><div class="t-price-name">Business</div><div class="t-price-amt">$49</div><div class="t-price-muted">/ tháng</div><ul class="t-price-list"><li>Không giới hạn</li><li>5 nền tảng</li><li>Team 5 người</li><li>API access</li></ul><button class="t-price-btn">Liên hệ</button></div>
+      </div>
+    </div>
+    <div class="t-dashboard">
+      <div class="t-section-title" style="margin-bottom:20px;">Giao diện Dashboard</div>
+      <div class="db-frame">
+        <div class="db-topbar"><div class="db-dot" style="background:#f87171;"></div><div class="db-dot" style="background:#fbbf24;"></div><div class="db-dot" style="background:#34d399;"></div><div class="db-title">AutoBlogspot Dashboard</div><div class="db-user">👤 Nguyễn Văn A</div></div>
+        <div class="db-body">
+          <div class="db-sidebar"><div class="db-nav-item active">📊 Tổng quan</div><div class="db-nav-item">📝 Bài viết</div><div class="db-nav-item">📅 Lịch đăng</div><div class="db-nav-item">⚙️ Cài đặt</div></div>
+          <div class="db-content">
+            <div class="db-stats"><div class="db-stat-card"><div class="db-stat-label">Bài đã đăng</div><div class="db-stat-value">128</div></div><div class="db-stat-card"><div class="db-stat-label">Hôm nay</div><div class="db-stat-value">12</div></div><div class="db-stat-card"><div class="db-stat-label">Nền tảng</div><div class="db-stat-value">3</div></div></div>
+            <div class="db-table"><div class="db-table-header"><span>Bài viết</span><span>Nền tảng</span><span>Trạng thái</span></div><div class="db-table-row"><span>Hướng dẫn SEO 2025</span><span>Blogspot</span><span><div class="db-badge published">Đã đăng</div></span></div><div class="db-table-row"><span>Top 10 công cụ AI</span><span>WordPress</span><span><div class="db-badge draft">Nháp</div></span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <footer class="t-footer"><div class="t-footer-logo">✍ AutoBlogspot</div><p>Tự động hóa blog của bạn với sức mạnh AI</p><div class="t-footer-links"><a href="#">Điều khoản</a><a href="#">Bảo mật</a><a href="#">Liên hệ</a><a href="#">Blog</a></div></footer>
+  </div>
+</div>
+
+<!-- ============================================================
+     THEME 3: CORAL SUNRISE
+     ============================================================ -->
+<div id="panel-t3" class="theme-panel t3">
+  <div class="theme-wrapper">
+    <div class="theme-label">🌅 Theme 3 — CORAL SUNRISE &nbsp;|&nbsp; Ấm áp · Năng lượng · Nổi bật</div>
+    <div class="palette-row">
+      <span class="palette-label">Bảng màu:</span>
+      <div class="chip-group"><div class="chip" style="background:#ea580c;" title="#ea580c"></div><span class="chip-name">Coral</span></div>
+      <div class="chip-group"><div class="chip" style="background:#f97316;" title="#f97316"></div><span class="chip-name">Orange</span></div>
+      <div class="chip-group"><div class="chip" style="background:#fff7f5;border-color:#fed7c7;" title="#fff7f5"><span style="color:#ea580c">bg</span></div><span class="chip-name">Warm BG</span></div>
+      <div class="chip-group"><div class="chip" style="background:#431407;" title="#431407"></div><span class="chip-name">Deep Brown</span></div>
+      <div class="chip-group"><div class="chip" style="background:#ffedd5;border-color:#fed7c7;" title="#ffedd5"><span style="color:#ea580c">sf</span></div><span class="chip-name">Peach</span></div>
+    </div>
+    <nav class="t-nav"><div class="t-nav-logo"><div class="logo-icon">✍</div>AutoBlogspot <span class="t-nav-badge">AI</span></div><div class="t-nav-links"><a href="#">Tính năng</a><a href="#">Nền tảng</a><a href="#">Bảng giá</a><a href="#">FAQ</a></div><button class="t-nav-cta">Bắt đầu miễn phí</button></nav>
+    <section class="t-hero">
+      <div class="t-hero-badge">🌅 Nóng bỏng - Đột phá - Khác biệt</div>
+      <h1>Blog của bạn,<br><span>Tỏa sáng mỗi ngày</span></h1>
+      <p>Từ ý tưởng đến bài viết hoàn chỉnh trong vài giây. Đăng lên 5 nền tảng cùng lúc với AI mạnh mẽ nhất.</p>
+      <div class="t-hero-btns"><button class="btn-primary">🚀 Dùng thử miễn phí</button><button class="btn-outline">Xem demo →</button></div>
+    </section>
+    <div class="t-stats"><div class="t-stat"><div class="t-stat-num">10,000+</div><div class="t-stat-lbl">Bài viết đã đăng</div></div><div class="t-stat"><div class="t-stat-num">500+</div><div class="t-stat-lbl">Người dùng</div></div><div class="t-stat"><div class="t-stat-num">5</div><div class="t-stat-lbl">Nền tảng hỗ trợ</div></div><div class="t-stat"><div class="t-stat-num">99.9%</div><div class="t-stat-lbl">Uptime</div></div></div>
+    <div class="t-section">
+      <div class="t-section-title">Nền tảng hỗ trợ</div>
+      <div class="t-section-sub">Đăng bài lên nhiều nền tảng cùng lúc</div>
+      <div class="t-cards">
+        <div class="t-card t-card-border-top" style="border-top-color:#EA4335"><div class="t-card-icon" style="background:#FEF2F2;color:#EA4335;">📝</div><h3>Blogspot</h3><p>Google Blogger API</p></div>
+        <div class="t-card t-card-border-top" style="border-top-color:#0073AA"><div class="t-card-icon" style="background:#EFF6FF;color:#0073AA;">🌐</div><h3>WordPress</h3><p>REST API v2</p></div>
+        <div class="t-card t-card-border-top" style="border-top-color:#35465C"><div class="t-card-icon" style="background:#F1F5F9;color:#35465C;">💙</div><h3>Tumblr</h3><p>Tumblr API v2</p></div>
+        <div class="t-card t-card-border-top" style="border-top-color:#F7C948"><div class="t-card-icon" style="background:#FFFBEB;color:#92400E;">⚡</div><h3>Hashnode</h3><p>GraphQL API</p></div>
+        <div class="t-card t-card-border-top" style="border-top-color:#1DA1F2"><div class="t-card-icon" style="background:#EFF6FF;color:#1DA1F2;">🐦</div><h3>Twitter/X</h3><p>Twitter API v2</p></div>
+      </div>
+    </div>
+    <div class="section-divider"></div>
+    <div class="t-section">
+      <div class="t-section-title">Tính năng nổi bật</div>
+      <div class="t-section-sub">Mọi thứ bạn cần để tự động hóa blog</div>
+      <div class="t-features">
+        <div class="t-feature"><div class="t-feature-icon">🤖</div><h4>AI Viết bài</h4><p>Tự động tạo nội dung chất lượng cao với Claude AI.</p></div>
+        <div class="t-feature"><div class="t-feature-icon">📅</div><h4>Lên lịch thông minh</h4><p>Đăng bài đúng giờ vàng, tự động theo lịch bạn thiết lập.</p></div>
+        <div class="t-feature"><div class="t-feature-icon">📊</div><h4>Phân tích hiệu suất</h4><p>Theo dõi lượt xem và tối ưu chiến lược nội dung.</p></div>
+        <div class="t-feature"><div class="t-feature-icon">🌍</div><h4>Đa ngôn ngữ</h4><p>Hỗ trợ Tiếng Việt, English và nhiều ngôn ngữ khác.</p></div>
+      </div>
+    </div>
+    <div class="section-divider"></div>
+    <div class="t-section">
+      <div class="t-section-title">Bảng giá</div>
+      <div class="t-section-sub">Bắt đầu miễn phí, nâng cấp khi cần</div>
+      <div class="t-pricing">
+        <div class="t-price-card"><div class="t-price-name">Free Trial</div><div class="t-price-amt">$0</div><div class="t-price-muted">/ 7 ngày</div><ul class="t-price-list"><li>5 bài viết / ngày</li><li>1 nền tảng</li><li>AI cơ bản</li></ul><button class="t-price-btn">Dùng thử</button></div>
+        <div class="t-price-card featured"><div class="t-price-name">Pro ⭐</div><div class="t-price-amt">$19</div><div class="t-price-muted">/ tháng</div><ul class="t-price-list"><li>Không giới hạn bài</li><li>3 nền tảng</li><li>AI nâng cao</li><li>Lên lịch thông minh</li></ul><button class="t-price-btn">Đăng ký ngay</button></div>
+        <div class="t-price-card"><div class="t-price-name">Business</div><div class="t-price-amt">$49</div><div class="t-price-muted">/ tháng</div><ul class="t-price-list"><li>Không giới hạn</li><li>5 nền tảng</li><li>Team 5 người</li><li>API access</li></ul><button class="t-price-btn">Liên hệ</button></div>
+      </div>
+    </div>
+    <div class="t-dashboard">
+      <div class="t-section-title" style="margin-bottom:20px;">Giao diện Dashboard</div>
+      <div class="db-frame">
+        <div class="db-topbar"><div class="db-dot" style="background:#f87171;"></div><div class="db-dot" style="background:#fbbf24;"></div><div class="db-dot" style="background:#34d399;"></div><div class="db-title">AutoBlogspot Dashboard</div><div class="db-user">👤 Nguyễn Văn A</div></div>
+        <div class="db-body">
+          <div class="db-sidebar"><div class="db-nav-item active">📊 Tổng quan</div><div class="db-nav-item">📝 Bài viết</div><div class="db-nav-item">📅 Lịch đăng</div><div class="db-nav-item">⚙️ Cài đặt</div></div>
+          <div class="db-content">
+            <div class="db-stats"><div class="db-stat-card"><div class="db-stat-label">Bài đã đăng</div><div class="db-stat-value">128</div></div><div class="db-stat-card"><div class="db-stat-label">Hôm nay</div><div class="db-stat-value">12</div></div><div class="db-stat-card"><div class="db-stat-label">Nền tảng</div><div class="db-stat-value">3</div></div></div>
+            <div class="db-table"><div class="db-table-header"><span>Bài viết</span><span>Nền tảng</span><span>Trạng thái</span></div><div class="db-table-row"><span>Hướng dẫn SEO 2025</span><span>Blogspot</span><span><div class="db-badge published">Đã đăng</div></span></div><div class="db-table-row"><span>Top 10 công cụ AI</span><span>WordPress</span><span><div class="db-badge draft">Nháp</div></span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <footer class="t-footer"><div class="t-footer-logo">✍ AutoBlogspot</div><p>Tự động hóa blog của bạn với sức mạnh AI</p><div class="t-footer-links"><a href="#">Điều khoản</a><a href="#">Bảo mật</a><a href="#">Liên hệ</a><a href="#">Blog</a></div></footer>
+  </div>
+</div>
+
+<!-- ============================================================
+     THEME 4: PURPLE DREAMS
+     ============================================================ -->
+<div id="panel-t4" class="theme-panel t4">
+  <div class="theme-wrapper">
+    <div class="theme-label">🔮 Theme 4 — PURPLE DREAMS &nbsp;|&nbsp; Sáng tạo · Cao cấp · Tinh tế</div>
+    <div class="palette-row">
+      <span class="palette-label">Bảng màu:</span>
+      <div class="chip-group"><div class="chip" style="background:#7c3aed;" title="#7c3aed"></div><span class="chip-name">Violet</span></div>
+      <div class="chip-group"><div class="chip" style="background:#8b5cf6;" title="#8b5cf6"></div><span class="chip-name">Purple</span></div>
+      <div class="chip-group"><div class="chip" style="background:#f5f3ff;border-color:#ddd6fe;" title="#f5f3ff"><span style="color:#7c3aed">bg</span></div><span class="chip-name">Lavender BG</span></div>
+      <div class="chip-group"><div class="chip" style="background:#2e1065;" title="#2e1065"></div><span class="chip-name">Deep Purple</span></div>
+      <div class="chip-group"><div class="chip" style="background:#ede9fe;border-color:#ddd6fe;" title="#ede9fe"><span style="color:#7c3aed">sf</span></div><span class="chip-name">Soft Violet</span></div>
+    </div>
+    <nav class="t-nav"><div class="t-nav-logo"><div class="logo-icon">✍</div>AutoBlogspot <span class="t-nav-badge">AI</span></div><div class="t-nav-links"><a href="#">Tính năng</a><a href="#">Nền tảng</a><a href="#">Bảng giá</a><a href="#">FAQ</a></div><button class="t-nav-cta">Bắt đầu miễn phí</button></nav>
+    <section class="t-hero">
+      <div class="t-hero-badge">🔮 AI tiên tiến - Kết quả vượt trội</div>
+      <h1>Sáng tạo không<br><span>có giới hạn</span></h1>
+      <p>Sức mạnh AI kết hợp với tự động hóa thông minh. Tạo và đăng nội dung chất lượng cao lên 5 nền tảng chỉ trong vài phút.</p>
+      <div class="t-hero-btns"><button class="btn-primary">🚀 Dùng thử miễn phí</button><button class="btn-outline">Xem demo →</button></div>
+    </section>
+    <div class="t-stats"><div class="t-stat"><div class="t-stat-num">10,000+</div><div class="t-stat-lbl">Bài viết đã đăng</div></div><div class="t-stat"><div class="t-stat-num">500+</div><div class="t-stat-lbl">Người dùng</div></div><div class="t-stat"><div class="t-stat-num">5</div><div class="t-stat-lbl">Nền tảng hỗ trợ</div></div><div class="t-stat"><div class="t-stat-num">99.9%</div><div class="t-stat-lbl">Uptime</div></div></div>
+    <div class="t-section">
+      <div class="t-section-title">Nền tảng hỗ trợ</div>
+      <div class="t-section-sub">Đăng bài lên nhiều nền tảng cùng lúc</div>
+      <div class="t-cards">
+        <div class="t-card t-card-border-top" style="border-top-color:#EA4335"><div class="t-card-icon" style="background:#FEF2F2;color:#EA4335;">📝</div><h3>Blogspot</h3><p>Google Blogger API</p></div>
+        <div class="t-card t-card-border-top" style="border-top-color:#0073AA"><div class="t-card-icon" style="background:#EFF6FF;color:#0073AA;">🌐</div><h3>WordPress</h3><p>REST API v2</p></div>
+        <div class="t-card t-card-border-top" style="border-top-color:#35465C"><div class="t-card-icon" style="background:#F1F5F9;color:#35465C;">💙</div><h3>Tumblr</h3><p>Tumblr API v2</p></div>
+        <div class="t-card t-card-border-top" style="border-top-color:#F7C948"><div class="t-card-icon" style="background:#FFFBEB;color:#92400E;">⚡</div><h3>Hashnode</h3><p>GraphQL API</p></div>
+        <div class="t-card t-card-border-top" style="border-top-color:#1DA1F2"><div class="t-card-icon" style="background:#EFF6FF;color:#1DA1F2;">🐦</div><h3>Twitter/X</h3><p>Twitter API v2</p></div>
+      </div>
+    </div>
+    <div class="section-divider"></div>
+    <div class="t-section">
+      <div class="t-section-title">Tính năng nổi bật</div>
+      <div class="t-section-sub">Mọi thứ bạn cần để tự động hóa blog</div>
+      <div class="t-features">
+        <div class="t-feature"><div class="t-feature-icon">🤖</div><h4>AI Viết bài</h4><p>Tự động tạo nội dung chất lượng cao với Claude AI.</p></div>
+        <div class="t-feature"><div class="t-feature-icon">📅</div><h4>Lên lịch thông minh</h4><p>Đăng bài đúng giờ vàng, tự động theo lịch bạn thiết lập.</p></div>
+        <div class="t-feature"><div class="t-feature-icon">📊</div><h4>Phân tích hiệu suất</h4><p>Theo dõi lượt xem và tối ưu chiến lược nội dung.</p></div>
+        <div class="t-feature"><div class="t-feature-icon">🌍</div><h4>Đa ngôn ngữ</h4><p>Hỗ trợ Tiếng Việt, English và nhiều ngôn ngữ khác.</p></div>
+      </div>
+    </div>
+    <div class="section-divider"></div>
+    <div class="t-section">
+      <div class="t-section-title">Bảng giá</div>
+      <div class="t-section-sub">Bắt đầu miễn phí, nâng cấp khi cần</div>
+      <div class="t-pricing">
+        <div class="t-price-card"><div class="t-price-name">Free Trial</div><div class="t-price-amt">$0</div><div class="t-price-muted">/ 7 ngày</div><ul class="t-price-list"><li>5 bài viết / ngày</li><li>1 nền tảng</li><li>AI cơ bản</li></ul><button class="t-price-btn">Dùng thử</button></div>
+        <div class="t-price-card featured"><div class="t-price-name">Pro ⭐</div><div class="t-price-amt">$19</div><div class="t-price-muted">/ tháng</div><ul class="t-price-list"><li>Không giới hạn bài</li><li>3 nền tảng</li><li>AI nâng cao</li><li>Lên lịch thông minh</li></ul><button class="t-price-btn">Đăng ký ngay</button></div>
+        <div class="t-price-card"><div class="t-price-name">Business</div><div class="t-price-amt">$49</div><div class="t-price-muted">/ tháng</div><ul class="t-price-list"><li>Không giới hạn</li><li>5 nền tảng</li><li>Team 5 người</li><li>API access</li></ul><button class="t-price-btn">Liên hệ</button></div>
+      </div>
+    </div>
+    <div class="t-dashboard">
+      <div class="t-section-title" style="margin-bottom:20px;">Giao diện Dashboard</div>
+      <div class="db-frame">
+        <div class="db-topbar"><div class="db-dot" style="background:#f87171;"></div><div class="db-dot" style="background:#fbbf24;"></div><div class="db-dot" style="background:#34d399;"></div><div class="db-title">AutoBlogspot Dashboard</div><div class="db-user">👤 Nguyễn Văn A</div></div>
+        <div class="db-body">
+          <div class="db-sidebar"><div class="t-nav-logo" style="padding:12px 20px;font-size:13px;border-bottom:1px solid var(--nav-border);margin-bottom:8px;"><div class="logo-icon" style="width:24px;height:24px;font-size:12px;">✍</div>AutoBlogspot</div><div class="db-nav-item active">📊 Tổng quan</div><div class="db-nav-item">📝 Bài viết</div><div class="db-nav-item">📅 Lịch đăng</div><div class="db-nav-item">⚙️ Cài đặt</div></div>
+          <div class="db-content">
+            <div class="db-stats"><div class="db-stat-card"><div class="db-stat-label">Bài đã đăng</div><div class="db-stat-value">128</div></div><div class="db-stat-card"><div class="db-stat-label">Hôm nay</div><div class="db-stat-value">12</div></div><div class="db-stat-card"><div class="db-stat-label">Nền tảng</div><div class="db-stat-value">3</div></div></div>
+            <div class="db-table"><div class="db-table-header"><span>Bài viết</span><span>Nền tảng</span><span>Trạng thái</span></div><div class="db-table-row"><span>Hướng dẫn SEO 2025</span><span>Blogspot</span><span><div class="db-badge published">Đã đăng</div></span></div><div class="db-table-row"><span>Top 10 công cụ AI</span><span>WordPress</span><span><div class="db-badge draft">Nháp</div></span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <footer class="t-footer"><div class="t-footer-logo">✍ AutoBlogspot</div><p>Tự động hóa blog của bạn với sức mạnh AI</p><div class="t-footer-links"><a href="#">Điều khoản</a><a href="#">Bảo mật</a><a href="#">Liên hệ</a><a href="#">Blog</a></div></footer>
+  </div>
+</div>
+
+<script>
+  const themes = ['t1','t2','t3','t4'];
+  const themeColors = {
+    t1: '#2563eb', t2: '#059669', t3: '#ea580c', t4: '#7c3aed'
+  };
+  function show(id) {
+    themes.forEach(t => {
+      document.getElementById('panel-' + t).classList.toggle('active', t === id);
+      const tab = document.getElementById('tab-' + t);
+      tab.classList.toggle('active', t === id);
+      tab.style.background = t === id ? themeColors[t] : 'rgba(255,255,255,.1)';
+      tab.style.color = t === id ? '#fff' : '#ccc';
+    });
+    window.scrollTo({ top: 0 });
+  }
+</script>
+</body>
+</html>

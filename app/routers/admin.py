@@ -126,13 +126,12 @@ def _payment_config(db: Session) -> dict:
         "payment_transfer_note":  get_setting(db, "payment_transfer_note"),
         "sepay_qr_image_url":     get_setting(db, "sepay_qr_image_url"),
         "sepay_api_key":          get_setting(db, "sepay_api_key"),
-        "ls_api_key":             get_setting(db, "ls_api_key"),
-        "ls_webhook_secret":      get_setting(db, "ls_webhook_secret"),
-        "ls_store_id":            get_setting(db, "ls_store_id"),
-        "ls_pro_variant_id":      get_setting(db, "ls_pro_variant_id"),
-        "ls_business_variant_id": get_setting(db, "ls_business_variant_id"),
-        "ls_pro_price":           get_setting(db, "ls_pro_price") or "$8/month",
-        "ls_business_price":      get_setting(db, "ls_business_price") or "$20/month",
+        "paypal_client_id":           get_setting(db, "paypal_client_id") or "",
+        "paypal_client_secret":       get_setting(db, "paypal_client_secret") or "",
+        "paypal_webhook_id":          get_setting(db, "paypal_webhook_id") or "",
+        "paypal_pro_price_usd":       get_setting(db, "paypal_pro_price_usd") or "8.00",
+        "paypal_business_price_usd":  get_setting(db, "paypal_business_price_usd") or "20.00",
+        "paypal_sandbox":             get_setting(db, "paypal_sandbox") or "",
     }
 
 
@@ -221,31 +220,29 @@ def save_payment_config(
     return RedirectResponse("/admin?tab=revenue&success=Da+luu+thong+tin+thanh+toan", status_code=303)
 
 
-@router.post("/admin/lemonsqueezy-config")
-def save_lemonsqueezy_config(
+@router.post("/admin/paypal-config")
+def save_paypal_config(
     request: Request,
-    ls_api_key:             str = Form(""),
-    ls_webhook_secret:      str = Form(""),
-    ls_store_id:            str = Form(""),
-    ls_pro_variant_id:      str = Form(""),
-    ls_business_variant_id: str = Form(""),
-    ls_pro_price:           str = Form(""),
-    ls_business_price:      str = Form(""),
+    paypal_client_id:          str = Form(""),
+    paypal_client_secret:      str = Form(""),
+    paypal_webhook_id:         str = Form(""),
+    paypal_pro_price_usd:      str = Form("8.00"),
+    paypal_business_price_usd: str = Form("20.00"),
+    paypal_sandbox:            str = Form(""),
     db: Session = Depends(get_db),
 ):
     if not _require_admin(request, db):
         return RedirectResponse("/")
     for key, val in [
-        ("ls_api_key",             ls_api_key),
-        ("ls_webhook_secret",      ls_webhook_secret),
-        ("ls_store_id",            ls_store_id),
-        ("ls_pro_variant_id",      ls_pro_variant_id),
-        ("ls_business_variant_id", ls_business_variant_id),
-        ("ls_pro_price",           ls_pro_price),
-        ("ls_business_price",      ls_business_price),
+        ("paypal_client_id",          paypal_client_id),
+        ("paypal_client_secret",      paypal_client_secret),
+        ("paypal_webhook_id",         paypal_webhook_id),
+        ("paypal_pro_price_usd",      paypal_pro_price_usd),
+        ("paypal_business_price_usd", paypal_business_price_usd),
+        ("paypal_sandbox",            paypal_sandbox),
     ]:
         set_setting(db, key, val.strip())
-    return RedirectResponse("/admin?tab=revenue&success=Da+luu+LemonSqueezy+config", status_code=303)
+    return RedirectResponse("/admin?tab=revenue&success=Da+luu+PayPal+config", status_code=303)
 
 
 @router.post("/admin/users/{uid}/toggle-active")

@@ -47,6 +47,11 @@
           </a>
         </li>
         <li>
+          <a href="/recovery" class="{% if active_page == 'recovery' %}active{% endif %}">
+            <i class="bi bi-arrow-repeat"></i> {{ _("nav_recovery") }}
+          </a>
+        </li>
+        <li>
           <a href="/billing" class="{% if active_page == 'billing' %}active{% endif %}">
             <i class="bi bi-credit-card"></i> {{ _("nav_billing") }}
           </a>

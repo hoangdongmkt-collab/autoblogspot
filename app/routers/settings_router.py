@@ -40,6 +40,8 @@ def settings_page(request: Request, db: Session = Depends(get_db)):
         "gemini_api_keys":        gemini_keys_raw,
         "gemini_key_count":       gemini_key_count,
         "claude_api_key":         get_setting(db, "claude_api_key",       user_id=uid),
+        "claude_api_base_url":    get_setting(db, "claude_api_base_url",  user_id=uid) or "",
+        "youtube_api_key":        get_setting(db, "youtube_api_key",      user_id=uid) or "",
         "openai_api_key":         get_setting(db, "openai_api_key",       user_id=uid),
         "groq_api_key":           get_setting(db, "groq_api_key",         user_id=uid),
         "models":                 models,
@@ -76,6 +78,8 @@ def save_settings(
     tumblr_consumer_secret:  str = Form(""),
     gemini_api_keys:         str = Form(""),
     claude_api_key:          str = Form(""),
+    claude_api_base_url:     str = Form(""),
+    youtube_api_key:         str = Form(""),
     openai_api_key:          str = Form(""),
     groq_api_key:            str = Form(""),
     active_tab:              str = Form("ai"),
@@ -100,6 +104,8 @@ def save_settings(
         ("tumblr_consumer_secret", tumblr_consumer_secret.strip()),
         ("gemini_api_keys",       "\n".join(k.strip() for k in gemini_api_keys.splitlines() if k.strip())),
         ("claude_api_key",        claude_api_key.strip()),
+        ("claude_api_base_url",   claude_api_base_url.strip()),
+        ("youtube_api_key",       youtube_api_key.strip()),
         ("openai_api_key",        openai_api_key.strip()),
         ("groq_api_key",          groq_api_key.strip()),
     ]:
@@ -156,6 +162,7 @@ def test_api_connection(
     api_key: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    get_current_user(request, db)
-    result = test_connection(provider, api_key)
+    current_user = get_current_user(request, db)
+    base_url = get_setting(db, "claude_api_base_url", user_id=current_user.id) if provider == "claude" else None
+    result = test_connection(provider, api_key.strip(), base_url=base_url)
     return JSONResponse(result)

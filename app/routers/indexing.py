@@ -51,13 +51,24 @@ def indexing_page(
     tasks    = base.order_by(IndexTask.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
 
     counts = {}
-    for s in ("pending", "submitted", "indexed", "skipped", "failed"):
+    for s in ("pending", "submitted"):
         counts[s] = (
             db.query(IndexTask).join(Article).join(Project)
             .filter(Project.user_id == current_user.id, IndexTask.status == s)
             .count()
         )
-    counts["all"] = sum(counts.values())
+    # Count sent = submitted + previously skipped/indexed (all treated as "sent")
+    counts["sent"] = (
+        db.query(IndexTask).join(Article).join(Project)
+        .filter(Project.user_id == current_user.id,
+                IndexTask.status.in_(["submitted", "indexed", "skipped"]))
+        .count()
+    )
+    counts["all"] = (
+        db.query(IndexTask).join(Article).join(Project)
+        .filter(Project.user_id == current_user.id)
+        .count()
+    )
 
     # Lists for filter dropdowns
     projects = (
