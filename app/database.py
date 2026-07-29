@@ -165,7 +165,10 @@ def _fix_blogspot_sites_nullable():
 
 def init_db():
     from . import models  # noqa: F401
-    Base.metadata.create_all(bind=engine)
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception:
+        pass
     _run_migrations()
 
 
