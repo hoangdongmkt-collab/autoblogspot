@@ -80,7 +80,7 @@ _ROTATION_PAID = {
     "gemini_api_keys": [
         "gemini:gemini-3.6-flash",
         "gemini:gemini-3.5-flash-lite",
-        "gemini:gemini-1.5-flash",
+        "gemini:gemini-2.0-flash",
     ],
     "claude_api_key": [
         "claude:claude-haiku-4-5-20251001",

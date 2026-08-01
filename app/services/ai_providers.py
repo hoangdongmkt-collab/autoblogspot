@@ -19,8 +19,8 @@ ANTHROPIC_BASE = "https://api.anthropic.com"
 GEMINI_MODELS = [
     {"id": "gemini:gemini-3.6-flash",        "name": "Gemini 3.6 Flash (Nhanh, Hiệu suất cao GA) — Google"},
     {"id": "gemini:gemini-3.5-flash-lite",   "name": "Gemini 3.5 Flash-Lite (Tối ưu chi phí, Độ trễ thấp) — Google"},
-    {"id": "gemini:gemini-1.5-flash",        "name": "Gemini 1.5 Flash (Ổn định) — Google"},
-    {"id": "gemini:gemini-1.5-pro",          "name": "Gemini 1.5 Pro (Mạnh mẽ, 50/ngày) — Google"},
+    {"id": "gemini:gemini-2.5-flash",        "name": "Gemini 2.5 Flash — Google"},
+    {"id": "gemini:gemini-2.0-flash",        "name": "Gemini 2.0 Flash — Google"},
 ]
 
 CLAUDE_MODELS = [
@@ -211,7 +211,7 @@ def test_connection(provider: str, api_key: str, base_url: str = None) -> dict:
     test_msg = [{"role": "user", "content": "Reply with exactly: OK"}]
     try:
         if provider == "gemini":
-            model = "gemini-3.6-flash"
+            model = "gemini-2.0-flash"
             result = _call_gemini_single(api_key, model, test_msg, max_tokens=10)
         elif provider == "claude":
             # Thử các model phổ thông — proxy và Anthropic chính thức có ID khác nhau
