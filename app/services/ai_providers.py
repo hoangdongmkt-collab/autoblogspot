@@ -17,10 +17,10 @@ ANTHROPIC_BASE = "https://api.anthropic.com"
 # ─── Model Lists ──────────────────────────────────────────────────────────────
 
 GEMINI_MODELS = [
-    {"id": "gemini:gemini-3.6-flash",        "name": "Gemini 3.6 Flash (Nhanh, Hiệu suất cao GA) — Google"},
-    {"id": "gemini:gemini-3.5-flash-lite",   "name": "Gemini 3.5 Flash-Lite (Tối ưu chi phí, Độ trễ thấp) — Google"},
-    {"id": "gemini:gemini-2.5-flash",        "name": "Gemini 2.5 Flash — Google"},
-    {"id": "gemini:gemini-2.0-flash",        "name": "Gemini 2.0 Flash — Google"},
+    {"id": "gemini:gemini-2.5-flash",        "name": "Gemini 2.5 Flash (Nhanh, Hiệu suất cao) — Google"},
+    {"id": "gemini:gemini-2.0-flash",        "name": "Gemini 2.0 Flash (Chuẩn, Phổ biến) — Google"},
+    {"id": "gemini:gemini-1.5-flash",        "name": "Gemini 1.5 Flash (Ổn định) — Google"},
+    {"id": "gemini:gemini-2.5-pro",          "name": "Gemini 2.5 Pro (Mạnh nhất) — Google"},
 ]
 
 CLAUDE_MODELS = [
@@ -211,8 +211,19 @@ def test_connection(provider: str, api_key: str, base_url: str = None) -> dict:
     test_msg = [{"role": "user", "content": "Reply with exactly: OK"}]
     try:
         if provider == "gemini":
-            model = "gemini-2.0-flash"
-            result = _call_gemini_single(api_key, model, test_msg, max_tokens=10)
+            gemini_test_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+            result = None
+            model = gemini_test_models[0]
+            for model in gemini_test_models:
+                try:
+                    result = _call_gemini_single(api_key, model, test_msg, max_tokens=10)
+                    break
+                except httpx.HTTPStatusError as _ge:
+                    if _ge.response.status_code in (404, 400) and "model" in _ge.response.text.lower():
+                        continue
+                    raise
+            if result is None:
+                return {"ok": False, "message": "Không tìm thấy model Gemini khả dụng."}
         elif provider == "claude":
             # Thử các model phổ thông — proxy và Anthropic chính thức có ID khác nhau
             claude_models = [
@@ -250,8 +261,8 @@ def test_connection(provider: str, api_key: str, base_url: str = None) -> dict:
             err_msg = (err_body.get("error", {}) or {}).get("message", "") or str(err_body)
         except Exception:
             err_msg = e.response.text[:200]
-        if status == 401:
-            return {"ok": False, "message": f"API key không hợp lệ (401). Chi tiết: {err_msg[:150]}"}
+        if status in (400, 401) and ("API key" in err_msg or "INVALID_ARGUMENT" in err_msg or status == 401):
+            return {"ok": False, "message": f"API key không hợp lệ ({status}). Chi tiết: {err_msg[:150]}"}
         if status == 429:
             return {"ok": False, "message": "Key hợp lệ nhưng đang bị rate limit (429)."}
         return {"ok": False, "message": f"Lỗi {status}: {err_msg[:150]}"}
