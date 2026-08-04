@@ -96,13 +96,14 @@ def _call_gemini_single(api_key: str, model: str, messages: list, max_tokens: in
             resp = c.post(f"{GEMINI_BASE}/chat/completions", headers=headers, json=payload)
             if resp.status_code == 200:
                 data = resp.json()
-                content = data["choices"][0]["message"]["content"]
+                msg = data.get("choices", [{}])[0].get("message", {})
+                content = msg.get("content") or ""
                 if content:
                     return content
             resp.raise_for_status()
-        except httpx.HTTPStatusError as e:
+        except Exception as e:
             last_err = e
-            if e.response.status_code == 429:
+            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429:
                 raise
 
         # 2. Fallback: Native Gemini REST API endpoint
@@ -131,10 +132,14 @@ def _call_gemini_single(api_key: str, model: str, messages: list, max_tokens: in
             resp2 = c.post(url, json=native_payload)
             if resp2.status_code == 200:
                 data = resp2.json()
-                parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])
-                text = "".join(p.get("text", "") for p in parts if "text" in p)
-                if text:
-                    return text
+                candidates = data.get("candidates") or []
+                if candidates:
+                    cand = candidates[0] or {}
+                    content_obj = cand.get("content") or {}
+                    parts = content_obj.get("parts") or []
+                    text = "".join(p.get("text", "") for p in parts if isinstance(p, dict) and "text" in p)
+                    if text:
+                        return text
             resp2.raise_for_status()
         except Exception as e:
             if not last_err:
