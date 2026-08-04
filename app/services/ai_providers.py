@@ -85,16 +85,64 @@ def _gemini_mark_ok(key: str) -> None:
 
 
 def _call_gemini_single(api_key: str, model: str, messages: list, max_tokens: int) -> str:
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    api_key = api_key.strip()
+    headers = {"Authorization": f"Bearer {api_key}", "x-goog-api-key": api_key, "Content-Type": "application/json"}
     payload = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": 0.8}
+    last_err = None
+
     with httpx.Client(timeout=120) as c:
-        resp = c.post(f"{GEMINI_BASE}/chat/completions", headers=headers, json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-    content = data["choices"][0]["message"]["content"]
-    if not content:
-        raise ValueError("Gemini returned empty response")
-    return content
+        # 1. Thử OpenAI compatibility endpoint
+        try:
+            resp = c.post(f"{GEMINI_BASE}/chat/completions", headers=headers, json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                content = data["choices"][0]["message"]["content"]
+                if content:
+                    return content
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            last_err = e
+            if e.response.status_code == 429:
+                raise
+
+        # 2. Fallback: Native Gemini REST API endpoint
+        try:
+            native_model = model if model.startswith("gemini-") else f"gemini-{model}"
+            contents = []
+            system_instruction = None
+            for m in messages:
+                role = m.get("role")
+                if role == "system":
+                    system_instruction = {"parts": [{"text": m.get("content", "")}]}
+                else:
+                    contents.append({
+                        "role": "model" if role == "assistant" else "user",
+                        "parts": [{"text": m.get("content", "")}],
+                    })
+
+            native_payload = {
+                "contents": contents,
+                "generationConfig": {"temperature": 0.8, "maxOutputTokens": max_tokens},
+            }
+            if system_instruction:
+                native_payload["systemInstruction"] = system_instruction
+
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{native_model}:generateContent?key={api_key}"
+            resp2 = c.post(url, json=native_payload)
+            if resp2.status_code == 200:
+                data = resp2.json()
+                parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])
+                text = "".join(p.get("text", "") for p in parts if "text" in p)
+                if text:
+                    return text
+            resp2.raise_for_status()
+        except Exception as e:
+            if not last_err:
+                last_err = e
+
+    if last_err:
+        raise last_err
+    raise ValueError("Gemini returned empty response")
 
 
 def call_gemini(keys_str: str, model: str, messages: list, max_tokens: int = 4000) -> str:
