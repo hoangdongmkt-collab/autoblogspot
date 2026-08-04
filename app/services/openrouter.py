@@ -148,11 +148,11 @@ _THINKING_MODELS = {
 }
 
 # Lỗi cho biết model quá tải / không khả dụng → chuyển sang model khác
-_FALLBACK_STATUS_CODES = {429, 500, 502, 503, 504, 524, 529}
+_FALLBACK_STATUS_CODES = {400, 404, 429, 500, 502, 503, 504, 524, 529}
 _FALLBACK_ERROR_KEYWORDS = [
     "overloaded", "rate limit", "too many requests", "capacity",
     "unavailable", "no endpoints", "model not found", "error 429",
-    "provider returned error", "524", "timeout", "timed out",
+    "provider returned error", "524", "timeout", "timed out", "not supported",
 ]
 
 # ─── Circuit Breaker (in-memory model health) ─────────────────────────────────
@@ -222,7 +222,8 @@ def get_model_health_summary() -> list[dict]:
 def get_setting(db: Session, key: str, default: str = "", user_id: int = None) -> str:
     if user_id:
         row = db.query(AppSetting).filter(AppSetting.key == f"u{user_id}_{key}").first()
-        return row.value if row else default
+        if row and row.value:
+            return row.value
     row = db.query(AppSetting).filter(AppSetting.key == key).first()
     return row.value if row else default
 
@@ -246,10 +247,12 @@ def set_setting(db: Session, key: str, value: str, user_id: int = None):
 
 def fetch_free_models_from_api(api_key: str) -> list[dict]:
     """Gọi OpenRouter API để lấy danh sách model miễn phí mới nhất."""
+    if not api_key or not api_key.strip():
+        raise ValueError("Chưa cấu hình OpenRouter API key")
     with httpx.Client(timeout=20) as client:
         resp = client.get(
             f"{OPENROUTER_BASE_URL}/models",
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers={"Authorization": f"Bearer {api_key.strip()}"},
         )
         resp.raise_for_status()
         all_models = resp.json().get("data", [])
@@ -297,7 +300,7 @@ def get_current_free_models(db: Optional[Session] = None, user_id: int = None) -
 def refresh_free_models(db: Session) -> tuple[list[dict], int]:
     """Cập nhật danh sách models từ OpenRouter API, lưu vào DB. Trả về (models, count)."""
     api_key = get_setting(db, "openrouter_api_key")
-    if not api_key:
+    if not api_key or not api_key.strip():
         raise ValueError("Chưa cấu hình OpenRouter API key")
 
     models = fetch_free_models_from_api(api_key)
@@ -324,8 +327,11 @@ def _is_fallback_error(exc: Exception) -> bool:
 
 def call_openrouter(api_key: str, model: str, messages: list, max_tokens: int = 4000, json_mode: bool = False) -> str:
     """Gọi một model cụ thể. Raise exception nếu lỗi."""
+    if not api_key or not api_key.strip():
+        raise ValueError("Chưa cấu hình OpenRouter API Key. Vui lòng vào Cài Đặt (Settings) để nhập API Key cho OpenRouter hoặc Gemini.")
+
     headers = {
-        "Authorization": f"Bearer {api_key}",
+        "Authorization": f"Bearer {api_key.strip()}",
         "HTTP-Referer": "https://autoblogspot.com",
         "X-Title": "AutoBlogspot",
         "Content-Type": "application/json",
@@ -409,10 +415,22 @@ def smart_call(
                     logger.warning(f"[smart_call] Không có key '{provider}' (user_id={user_id}), fallback OpenRouter")
 
     or_key = get_setting(db, "openrouter_api_key", user_id=user_id)
-    # Strip provider prefix before passing to OpenRouter (e.g. "groq:model" → use default)
+    # Strip provider prefix before passing to OpenRouter (e.g. "gemini:model" → use default)
     or_model = preferred_model
     if preferred_model and ":" in preferred_model and not preferred_model.startswith("http"):
         or_model = get_setting(db, "openrouter_model", DEFAULT_OR_MODEL, user_id=user_id)
+
+    if not or_key or not or_key.strip():
+        if preferred_model and ":" in preferred_model:
+            provider = preferred_model.split(":", 1)[0]
+            raise ValueError(
+                f"Dự án đang sử dụng Model '{preferred_model}' nhưng bạn chưa nhập API Key cho '{provider}' "
+                f"(hoặc OpenRouter API Key). Vui lòng vào Cài Đặt (Settings) để nhập API Key hoặc chọn Model miễn phí."
+            )
+        raise ValueError(
+            "Chưa cấu hình API Key. Vui lòng vào Cài Đặt (Settings) để nhập OpenRouter API Key hoặc Gemini Key."
+        )
+
     return call_with_fallback(db, or_key, or_model, messages, max_tokens, json_mode=json_mode)
 
 

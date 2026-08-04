@@ -736,7 +736,7 @@ def process_keyword_clustering():
                     kw_map   = {kw.keyword: kw for kw in pending_kws}
                     clusters_data = openrouter._cluster_batch(
                         db, kw_texts,
-                        openrouter.get_setting(db, "openrouter_model", openrouter.DEFAULT_OR_MODEL, user_id=project.user_id),
+                        project.ai_model or openrouter.get_setting(db, "openrouter_model", openrouter.DEFAULT_OR_MODEL, user_id=project.user_id),
                         user_id=project.user_id,
                     )
 
