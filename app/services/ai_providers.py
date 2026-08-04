@@ -17,10 +17,10 @@ ANTHROPIC_BASE = "https://api.anthropic.com"
 # ─── Model Lists ──────────────────────────────────────────────────────────────
 
 GEMINI_MODELS = [
-    {"id": "gemini:gemini-2.5-flash",        "name": "Gemini 2.5 Flash (Nhanh, Hiệu suất cao) — Google"},
-    {"id": "gemini:gemini-2.0-flash",        "name": "Gemini 2.0 Flash (Chuẩn, Phổ biến) — Google"},
-    {"id": "gemini:gemini-1.5-flash",        "name": "Gemini 1.5 Flash (Ổn định) — Google"},
-    {"id": "gemini:gemini-2.5-pro",          "name": "Gemini 2.5 Pro (Mạnh nhất) — Google"},
+    {"id": "gemini:gemini-2.5-flash",        "name": "Gemini 2.5 Flash (Cần Gemini API Key) — Google"},
+    {"id": "gemini:gemini-2.0-flash",        "name": "Gemini 2.0 Flash (Cần Gemini API Key) — Google"},
+    {"id": "gemini:gemini-1.5-flash",        "name": "Gemini 1.5 Flash (Cần Gemini API Key) — Google"},
+    {"id": "gemini:gemini-2.5-pro",          "name": "Gemini 2.5 Pro (Cần Gemini API Key) — Google"},
 ]
 
 CLAUDE_MODELS = [
