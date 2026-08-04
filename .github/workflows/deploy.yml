@@ -22,8 +22,4 @@ jobs:
           script: |
             cd ~/autoblogspot
             git pull origin main
-            # Nếu bạn có sử dụng Virtual Environment (venv) trên VPS, bạn có thể bỏ comment các dòng dưới:
-            # source venv/bin/activate
-            # pip install -r requirements.txt
-            # Lệnh khởi động lại ứng dụng của bạn (ví dụ: systemctl, pm2 hoặc gunicorn):
-            # sudo systemctl restart autoblogspot.service || true
+            sudo systemctl restart autoblogspot.service || sudo systemctl restart autoblogspot || docker compose restart || true

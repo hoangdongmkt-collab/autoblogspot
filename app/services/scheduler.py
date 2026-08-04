@@ -30,12 +30,15 @@ _LOCK_CLASS_PUBLISH  = 2
 
 
 def _try_project_lock(db: Session, lock_class: int, project_id: int) -> bool:
-    return bool(
-        db.execute(
-            text("SELECT pg_try_advisory_lock(:c, :p)"),
-            {"c": lock_class, "p": project_id},
-        ).scalar()
-    )
+    try:
+        return bool(
+            db.execute(
+                text("SELECT pg_try_advisory_lock(:c, :p)"),
+                {"c": lock_class, "p": project_id},
+            ).scalar()
+        )
+    except Exception:
+        return True
 
 
 def _release_project_lock(db: Session, lock_class: int, project_id: int) -> None:
