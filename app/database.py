@@ -261,6 +261,7 @@ def _run_migrations_sqlite():
         ("project_sites",  "articles_today",      "INTEGER DEFAULT 0"),
         ("project_sites",  "last_count_reset",    "DATE"),
         ("project_sites",  "last_published_at",   "DATETIME"),
+        ("project_sites",  "next_publish_at",      "DATETIME"),
         ("subscriptions",  "projects_limit",          "INTEGER DEFAULT 1"),
         ("subscriptions",  "sites_limit",             "INTEGER DEFAULT 1"),
         ("subscriptions",  "articles_per_day_limit",  "INTEGER DEFAULT 5"),

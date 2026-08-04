@@ -774,7 +774,7 @@ def _extract_json(raw: str) -> dict | list:
 
     # Thử parse trực tiếp
     try:
-        return json.loads(text)
+        return json.loads(text, strict=False)
     except json.JSONDecodeError:
         pass
 
@@ -782,11 +782,11 @@ def _extract_json(raw: str) -> dict | list:
     cleaned = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', ' ', text)
     # Thay literal newline/tab bên trong chuỗi JSON bằng escaped version
     cleaned = re.sub(r'(?<=: ")(.*?)(?="[,\n\}])', lambda m: m.group(0).replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t'), cleaned, flags=re.DOTALL)
-    # Xóa invalid JSON escape sequences như \B, \đ, \g (không phải " \ / b f n r t u)
-    cleaned = re.sub(r'\\(?!["\\/bfnrtu])', '', cleaned)
+    # Sửa invalid JSON escape sequences: bất kỳ \ nào không thuộc \", \\, \/, \b, \f, \n, \r, \t, hoặc \uXXXX sẽ đổi thành \\
+    cleaned = re.sub(r'\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})', r'\\\\', cleaned)
 
     try:
-        return json.loads(cleaned)
+        return json.loads(cleaned, strict=False)
     except json.JSONDecodeError:
         pass
 
@@ -794,14 +794,14 @@ def _extract_json(raw: str) -> dict | list:
     try:
         repaired = _repair_truncated_json(raw.strip())
         if repaired != raw.strip():
-            return json.loads(repaired)
+            return json.loads(repaired, strict=False)
     except (json.JSONDecodeError, Exception):
         pass
 
     try:
         repaired_cleaned = _repair_truncated_json(cleaned)
         if repaired_cleaned != cleaned:
-            return json.loads(repaired_cleaned)
+            return json.loads(repaired_cleaned, strict=False)
     except (json.JSONDecodeError, Exception):
         pass
 

@@ -9,6 +9,7 @@ HASHNODE_GQL = "https://gql.hashnode.com"
 
 def _slugify(text: str) -> str:
     """Chuyển text bất kỳ → slug ASCII hợp lệ cho Hashnode (a-z, 0-9, -)."""
+    text = text.replace("đ", "d").replace("Đ", "d")
     nfkd = unicodedata.normalize("NFD", text)
     ascii_str = nfkd.encode("ascii", "ignore").decode("ascii")
     slug = re.sub(r"[^a-z0-9]+", "-", ascii_str.lower()).strip("-")
