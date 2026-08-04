@@ -399,6 +399,8 @@ def add_keywords(
             db.add(Keyword(project_id=project_id, keyword=kw_text))
             added += 1
     db.commit()
+    if added > 0 and project.status == "running":
+        Thread(target=_trigger_pipeline, daemon=True).start()
     return RedirectResponse(f"/projects/{project_id}?success=Added+{added}+keywords", status_code=303)
 
 

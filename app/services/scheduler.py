@@ -718,54 +718,58 @@ def process_keyword_clustering():
             .all()
         )
         for project in projects_with_pending:
-            pending_kws = (
-                db.query(Keyword)
-                .filter(Keyword.project_id == project.id, Keyword.status == "pending")
-                .limit(_BATCH)
-                .all()
-            )
-            if not pending_kws:
-                continue
-
             if not _try_project_lock(db, _LOCK_CLASS_CLUSTER, project.id):
                 continue  # worker khác đang xử lý project này
 
-            kw_texts = [kw.keyword for kw in pending_kws]
-            kw_map   = {kw.keyword: kw for kw in pending_kws}
             try:
-                clusters_data = openrouter._cluster_batch(db, kw_texts, openrouter.get_setting(db, "openrouter_model", openrouter.DEFAULT_OR_MODEL, user_id=project.user_id), user_id=project.user_id)
-
-                for cluster_data in clusters_data:
-                    cluster = KeywordCluster(
-                        project_id=project.id,
-                        cluster_name=cluster_data["name"],
-                        status="pending",
+                while True:
+                    pending_kws = (
+                        db.query(Keyword)
+                        .filter(Keyword.project_id == project.id, Keyword.status == "pending")
+                        .limit(_BATCH)
+                        .all()
                     )
-                    db.add(cluster)
-                    db.flush()
+                    if not pending_kws:
+                        break
 
-                    for kw_text in cluster_data["keywords"]:
-                        kw_obj = kw_map.get(kw_text)
-                        if kw_obj:
-                            kw_obj.cluster_id = cluster.id
-                            kw_obj.status = "clustered"
+                    kw_texts = [kw.keyword for kw in pending_kws]
+                    kw_map   = {kw.keyword: kw for kw in pending_kws}
+                    clusters_data = openrouter._cluster_batch(
+                        db, kw_texts,
+                        openrouter.get_setting(db, "openrouter_model", openrouter.DEFAULT_OR_MODEL, user_id=project.user_id),
+                        user_id=project.user_id,
+                    )
 
-                    for ps in project.project_sites:
-                        article = Article(
-                            cluster_id=cluster.id,
-                            site_id=ps.site_id,
+                    for cluster_data in clusters_data:
+                        cluster = KeywordCluster(
                             project_id=project.id,
-                            language=ps.language,
+                            cluster_name=cluster_data["name"],
                             status="pending",
                         )
-                        db.add(article)
+                        db.add(cluster)
+                        db.flush()
 
-                db.commit()
-                remaining = db.query(Keyword).filter(Keyword.project_id == project.id, Keyword.status == "pending").count()
-                logger.info(f"Clustered {len(kw_texts)} keywords into {len(clusters_data)} clusters for project {project.id} (còn {remaining} kw pending)")
+                        for kw_text in cluster_data["keywords"]:
+                            kw_obj = kw_map.get(kw_text)
+                            if kw_obj:
+                                kw_obj.cluster_id = cluster.id
+                                kw_obj.status = "clustered"
 
-                Thread(target=process_writing_queue, daemon=True).start()
+                        for ps in project.project_sites:
+                            article = Article(
+                                cluster_id=cluster.id,
+                                site_id=ps.site_id,
+                                project_id=project.id,
+                                language=ps.language,
+                                status="pending",
+                            )
+                            db.add(article)
 
+                    db.commit()
+                    remaining = db.query(Keyword).filter(Keyword.project_id == project.id, Keyword.status == "pending").count()
+                    logger.info(f"Clustered {len(kw_texts)} keywords into {len(clusters_data)} clusters for project {project.id} (còn {remaining} kw pending)")
+
+                    Thread(target=process_writing_queue, daemon=True).start()
             except Exception as e:
                 logger.error(f"Error clustering keywords for project {project.id}: {e}")
                 db.rollback()
