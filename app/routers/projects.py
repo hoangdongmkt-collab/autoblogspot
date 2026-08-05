@@ -211,8 +211,11 @@ async def create_project(
         elif keywords_text.strip():
             for kw in [k.strip() for k in keywords_text.splitlines() if k.strip()]:
                 db.add(Keyword(project_id=project.id, keyword=kw))
+        
+        project.status = "running"  # auto-start keyword projects
 
     db.commit()
+    Thread(target=_trigger_pipeline, daemon=True).start()
     return RedirectResponse(f"/projects/{project.id}", status_code=303)
 
 
