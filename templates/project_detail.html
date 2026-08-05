@@ -184,6 +184,13 @@
         {% else %}
         <div class="text-center text-muted py-3 small">
           <i class="bi bi-info-circle me-1"></i>{{ _("projd_no_clusters") }}
+          {% if keywords %}
+          <form method="post" action="/projects/{{ project.id }}/cluster-now" class="mt-2">
+            <button type="submit" class="btn btn-sm btn-primary">
+              <i class="bi bi-lightning-charge-fill me-1"></i>Chia cụm từ khóa & Viết bài ngay
+            </button>
+          </form>
+          {% endif %}
         </div>
         {% endif %}
       </div>

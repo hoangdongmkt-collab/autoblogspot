@@ -578,7 +578,24 @@ def edit_project(
             db.add(ProjectSite(project_id=project_id, site_id=site_id, language=lang))
 
     db.commit()
+    if project.status == "running":
+        Thread(target=_trigger_pipeline, daemon=True).start()
     return RedirectResponse(f"/projects/{project_id}?success=Da+cap+nhat+du+an", status_code=303)
+
+
+@router.post("/projects/{project_id}/cluster-now")
+def cluster_now(project_id: int, request: Request, db: Session = Depends(get_db)):
+    current_user = get_current_user(request, db)
+    project = db.query(Project).filter(
+        Project.id == project_id, Project.user_id == current_user.id
+    ).first()
+    if not project:
+        raise HTTPException(status_code=404)
+
+    project.status = "running"
+    db.commit()
+    Thread(target=_trigger_pipeline, daemon=True).start()
+    return RedirectResponse(f"/projects/{project_id}?success=Dang+tien+hanh+chia+cum+tu+khoa...", status_code=303)
 
 
 @router.post("/projects/{project_id}/delete")
