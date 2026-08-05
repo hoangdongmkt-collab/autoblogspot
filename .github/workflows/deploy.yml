@@ -22,4 +22,4 @@ jobs:
           script: |
             cd ~/autoblogspot
             git pull origin main
-            sudo systemctl restart autoblogspot.service || sudo systemctl restart autoblogspot || docker compose restart || true
+            docker compose up -d --build || docker compose restart || sudo systemctl restart autoblogspot || true
