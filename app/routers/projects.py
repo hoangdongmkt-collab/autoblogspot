@@ -331,7 +331,12 @@ def project_detail(project_id: int, request: Request, db: Session = Depends(get_
 
 
 def _trigger_pipeline():
-    process_keyword_clustering()
+    try:
+        process_keyword_clustering()
+        from ..services.scheduler import publish_ready_articles
+        publish_ready_articles()
+    except Exception as e:
+        logger.error(f"_trigger_pipeline error: {e}")
 
 
 @router.post("/projects/{project_id}/start")
