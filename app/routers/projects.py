@@ -490,6 +490,8 @@ async def upload_clusters(
             clusters_created += 1
 
         db.commit()
+        if clusters_created > 0 and project.status == "running":
+            Thread(target=_trigger_pipeline, daemon=True).start()
 
         msg = f"Đã tạo {clusters_created} nhóm, {kw_total} từ khóa — chiến dịch bắt đầu viết bài ngay!"
         if skipped_rows:
