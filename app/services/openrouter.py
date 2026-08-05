@@ -1179,25 +1179,23 @@ def _cluster_batch(
 ) -> list[dict]:
     """Gọi AI phân cụm cho một lô từ khóa. Retry tối đa 3 lần nếu AI không trả JSON."""
     kw_list = "\n".join(f"- {kw}" for kw in keywords)
-    prompt = f"""You are a senior SEO strategist. Group the following keywords into topical clusters. Each cluster will become ONE SEO article.
+    prompt = f"""Group the following keywords into logical topical clusters. Each cluster will represent one article topic.
 
-Keywords to cluster:
+Keywords:
 {kw_list}
 
 Rules:
-1. Each cluster has exactly 1 PRIMARY keyword and 0–5 SECONDARY keywords (you decide how many based on relevance).
-2. PRIMARY keyword: the most specific, highest-intent keyword that best represents the article topic.
-3. SECONDARY keywords: closely related variations or long-tail versions of the primary keyword that can be naturally woven into the same article. Only add if they truly belong — do NOT force unrelated keywords together.
-4. Group by SEARCH INTENT — all keywords in a cluster must share the same intent (informational, commercial, or transactional).
-5. Cluster "name" must be a specific, article-ready topic title (e.g. "How to Choose Outdoor Park Benches for Small Gardens", not "Park Bench").
-6. Every keyword must appear in exactly one cluster.
+1. Group closely related keywords together.
+2. The cluster "name" should be a clear, concise article topic name based on the keywords.
+3. Choose 1 primary_keyword and put remaining related keywords in secondary_keywords.
+4. Every keyword must be assigned to a cluster.
 
-Return ONLY a valid JSON array — no explanation, no markdown, nothing else:
+Return ONLY a valid JSON array:
 [
   {{
-    "name": "Specific SEO Article Topic",
-    "primary_keyword": "the single most important keyword",
-    "secondary_keywords": ["variation 1", "long-tail variant"]
+    "name": "Topic Name",
+    "primary_keyword": "main keyword",
+    "secondary_keywords": ["keyword 2", "keyword 3"]
   }}
 ]"""
 

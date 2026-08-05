@@ -52,16 +52,27 @@ def _release_project_lock(db: Session, lock_class: int, project_id: int) -> None
 
 
 def _inject_content_block(content: str, block: str, position: str) -> str:
-    """Inject a custom HTML block into article content at the specified position."""
+    """Inject a custom HTML block into article content with modern responsive CTA styling."""
     if not block or not block.strip():
         return content
-    wrapped = f'\n<div class="content-block">\n{block}\n</div>\n'
+
+    # Standardize CTA styling container if raw HTML/text is passed
+    if "<div" not in block.lower() and "<style" not in block.lower():
+        styled_block = f'''
+<div class="autoblog-cta-box" style="margin: 25px 0; padding: 20px; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-left: 5px solid #2563eb; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); font-family: sans-serif;">
+    <div class="autoblog-cta-content" style="color: #1e293b; font-size: 15px; line-height: 1.6;">
+        {block}
+    </div>
+</div>
+'''
+    else:
+        styled_block = f'\n<div class="content-block">\n{block}\n</div>\n'
+
     if position == "top":
-        return wrapped + content
+        return styled_block + content
     if position == "bottom":
-        return content + wrapped
+        return content + styled_block
     if position == "middle":
-        # Insert after the 2nd </h2> heading, or at ~50% character position
         import re
         headings = [m.end() for m in re.finditer(r'</h[23]>', content, re.IGNORECASE)]
         if len(headings) >= 2:
@@ -70,8 +81,8 @@ def _inject_content_block(content: str, block: str, position: str) -> str:
             mid = headings[0]
         else:
             mid = len(content) // 2
-        return content[:mid] + wrapped + content[mid:]
-    # random
+        return content[:mid] + styled_block + content[mid:]
+
     import random as _rand
     pos = _rand.choice(["top", "middle", "bottom"])
     return _inject_content_block(content, block, pos)
@@ -245,24 +256,13 @@ def _write_single_article(db: Session, article: Article) -> None:
         .limit(20)
         .all()
     )
-    internal_links = [{"title": a.title, "url": a.url} for a in published_on_site]
-
-    author, angle = agent_service.assign_agent(db, article, cluster)
-    if author:
-        article.author_id = author.id
-    if angle:
-        article.content_angle_id = angle.id
-    # Commit ngay để release write lock trước khi gọi AI (có thể mất 60-120s)
-    db.commit()
-
-    # ── Gọi AI — không giữ write lock ────────────────────────────────────────
+    # ── Gọi AI ────────────────────────────────────────────────────────────────
     article_id   = article.id
     cluster_id   = cluster.id
     user_id      = project.user_id
     language     = article.language
 
     # Round-robin: mỗi bài dùng model khác nhau từ pool (paid + free).
-    # Nếu pool rỗng (chưa cấu hình provider nào) → dùng project.ai_model.
     ai_model = openrouter.pick_rotation_model(db, user_id=user_id) or project.ai_model
 
     # ── Bước 0: Research Brief / YouTube Context ──────────────────────────────
@@ -270,7 +270,6 @@ def _write_single_article(db: Session, article: Article) -> None:
     youtube_context = None
     fresh_cluster = db.get(KeywordCluster, cluster_id)
 
-    # Check if this cluster came from a YouTube source
     if fresh_cluster and fresh_cluster.youtube_source_id:
         yt_src = db.get(YoutubeSource, fresh_cluster.youtube_source_id)
         if yt_src:
@@ -287,7 +286,6 @@ def _write_single_article(db: Session, article: Article) -> None:
             }
             logger.info(f"Cluster {cluster_id}: using YouTube context from video {yt_src.video_id}")
     else:
-        # Standard keyword-based: use research brief cache
         if fresh_cluster and fresh_cluster.intent_analysis:
             try:
                 cached = json.loads(fresh_cluster.intent_analysis)
@@ -325,8 +323,8 @@ def _write_single_article(db: Session, article: Article) -> None:
         model=ai_model,
         existing_titles=existing_titles,
         internal_links=internal_links,
-        author_persona={"name": author.name, "bio": author.bio, "writing_style": author.writing_style} if author else None,
-        content_angle={"name": angle.name, "description": angle.description} if angle else None,
+        author_persona=None,
+        content_angle=None,
         research_brief=research_brief,
         youtube_context=youtube_context,
         user_id=user_id,
