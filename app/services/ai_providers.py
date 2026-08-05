@@ -17,10 +17,9 @@ ANTHROPIC_BASE = "https://api.anthropic.com"
 # ─── Model Lists ──────────────────────────────────────────────────────────────
 
 GEMINI_MODELS = [
-    {"id": "gemini:gemini-2.5-flash",        "name": "Gemini 2.5 Flash (Cần Gemini API Key) — Google"},
     {"id": "gemini:gemini-2.0-flash",        "name": "Gemini 2.0 Flash (Cần Gemini API Key) — Google"},
     {"id": "gemini:gemini-1.5-flash",        "name": "Gemini 1.5 Flash (Cần Gemini API Key) — Google"},
-    {"id": "gemini:gemini-2.5-pro",          "name": "Gemini 2.5 Pro (Cần Gemini API Key) — Google"},
+    {"id": "gemini:gemini-1.5-pro",          "name": "Gemini 1.5 Pro (Cần Gemini API Key) — Google"},
 ]
 
 CLAUDE_MODELS = [
@@ -84,7 +83,14 @@ def _gemini_mark_ok(key: str) -> None:
         _gemini_state.pop(key, None)
 
 
+_GEMINI_MODEL_ALIASES = {
+    "gemini-2.5-flash": "gemini-2.0-flash",
+    "gemini-2.5-pro": "gemini-1.5-pro",
+}
+
+
 def _call_gemini_single(api_key: str, model: str, messages: list, max_tokens: int) -> str:
+    model = _GEMINI_MODEL_ALIASES.get(model, model)
     api_key = api_key.strip()
     headers = {"Authorization": f"Bearer {api_key}", "x-goog-api-key": api_key, "Content-Type": "application/json"}
     payload = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": 0.8}
@@ -264,7 +270,7 @@ def test_connection(provider: str, api_key: str, base_url: str = None) -> dict:
     test_msg = [{"role": "user", "content": "Reply with exactly: OK"}]
     try:
         if provider == "gemini":
-            gemini_test_models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+            gemini_test_models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
             result = None
             model = gemini_test_models[0]
             for model in gemini_test_models:

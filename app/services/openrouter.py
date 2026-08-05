@@ -78,9 +78,9 @@ _user_rotation_index: dict[int, int] = {}  # user_id → next index in pool
 # Các model trả phí tốt nhất để đưa vào pool, grouped by credential key
 _ROTATION_PAID = {
     "gemini_api_keys": [
-        "gemini:gemini-2.5-flash",
         "gemini:gemini-2.0-flash",
         "gemini:gemini-1.5-flash",
+        "gemini:gemini-1.5-pro",
     ],
     "claude_api_key": [
         "claude:claude-haiku-4-5-20251001",
@@ -1221,10 +1221,11 @@ Return ONLY a valid JSON array:
     last_error = None
     for attempt in range(3):
         try:
+            active_model = preferred if attempt < 2 else DEFAULT_OR_MODEL
             use_prompt = retry_prompt if attempt > 0 else prompt
             cluster_messages = [system_msg, {"role": "user", "content": use_prompt}]
             content, used_model = smart_call(
-                db, preferred, cluster_messages,
+                db, active_model, cluster_messages,
                 max_tokens=3000,
                 user_id=user_id,
                 json_mode=True,
