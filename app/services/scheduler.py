@@ -256,6 +256,7 @@ def _write_single_article(db: Session, article: Article) -> None:
         .limit(20)
         .all()
     )
+    internal_links = [{"title": a.title, "url": a.url} for a in published_on_site]
     # ── Gọi AI ────────────────────────────────────────────────────────────────
     article_id   = article.id
     cluster_id   = cluster.id
