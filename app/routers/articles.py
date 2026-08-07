@@ -15,9 +15,15 @@ from ..templates import templates
 router = APIRouter()
 
 
-def _reset_article_for_retry(article: Article) -> None:
-    # Nếu đã có nội dung → chỉ cần đăng lại, không viết lại (tiết kiệm AI)
-    article.status        = "ready" if article.content else "pending"
+def _reset_article_for_retry(article: Article, force_rewrite: bool = True) -> None:
+    from ..services.scheduler import _is_broken_content
+    # Nếu yêu cầu viết lại (force_rewrite) hoặc nội dung cũ bị dính lỗi prompt leak -> xóa nội dung cũ để AI viết lại từ đầu
+    if force_rewrite or (article.content and _is_broken_content(article.content)):
+        article.content = None
+        article.title = None
+        article.status = "pending"
+    else:
+        article.status = "ready" if article.content else "pending"
     article.retry_count   = 0
     article.error_message = None
 

@@ -574,10 +574,14 @@ def _replace_ai_phrases(html: str) -> str:
 
 
 def clean_ai_html_content(html: str) -> str:
-    """Loại bỏ lời chào, lời kết, ghi chú và comment HTML rác do AI tự sinh ra."""
+    """Loại bỏ lời chào, lời kết, suy luận AI (thinking tags/meta text), ghi chú và comment HTML rác."""
     if not html:
         return ""
     
+    # 0. Xóa thẻ <think>...</think> và [THINKING]...[/THINKING] do các model reasoning tự xuất
+    html = re.sub(r"<think>.*?</think>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(r"\[THINKING\].*?\[/THINKING\]", "", html, flags=re.DOTALL | re.IGNORECASE)
+
     # 1. Xóa toàn bộ comment HTML (e.g. <!-- comment -->)
     html = re.sub(r"<!--.*?-->", "", html, flags=re.DOTALL)
     
@@ -597,7 +601,19 @@ def clean_ai_html_content(html: str) -> str:
         if "<" not in postamble:
             html = html[:end_idx]
 
-    # 4. Loại bỏ các dòng nhiễu hội thoại nếu chúng bị lọt vào thẻ HTML hoặc tiêu đề thừa
+    # 4. Loại bỏ các khối meta text / prompt leak (nằm cả trong hoặc ngoài thẻ HTML)
+    meta_patterns = [
+        r"<p>[^<]*?(?:We need to continue|The assistant wrote|The user now wants us|Output ONLY the remaining|Complete the article through|We must not repeat|Since we have not yet output|Actually the previous assistant|Answer box which is|Must embed the three backlink|Must have structure|Must use exact name|Must have FAQ section|Must use Vietnamese only|Must use allowed transitions|We need to pick a name|We need to output).*?</p>",
+        r"<blockquote>[^<]*?(?:Lời khuyên từ \[Tên tác giả\]|\[Author's Name\]'s Advice).*?</blockquote>",
+    ]
+    for pattern in meta_patterns:
+        html = re.sub(pattern, "", html, flags=re.DOTALL | re.IGNORECASE)
+
+    # Clean empty placeholders like [Tên tác giả], [Author's Name]
+    html = re.sub(r"\[Tên\s+tác\s+giả\]", "Chuyên gia", html, flags=re.IGNORECASE)
+    html = re.sub(r"\[Author\'?s?\s+Name\]", "Expert", html, flags=re.IGNORECASE)
+
+    # 5. Loại bỏ các dòng nhiễu hội thoại nếu chúng bị lọt vào thẻ HTML hoặc tiêu đề thừa
     lines = html.split("\n")
     cleaned_lines = []
     for line in lines:
@@ -607,11 +623,45 @@ def clean_ai_html_content(html: str) -> str:
             continue
         # Bỏ các dòng thuần chữ hội thoại AI không có tag HTML
         if not (stripped.startswith("<") or stripped.endswith(">")):
-            if re.match(r"^(here is the|sure, here is|chắc chắn rồi|dưới đây là|tôi hy vọng|hy vọng bài viết|note:|lưu ý:|chúc bạn).*?$", stripped, re.IGNORECASE):
+            if re.match(r"^(here is the|sure, here is|chắc chắn rồi|dưới đây là|tôi hy vọng|hy vọng bài viết|note:|lưu ý:|chúc bạn|we need to|the assistant).*?$", stripped, re.IGNORECASE):
                 continue
         cleaned_lines.append(line)
     
     return "\n".join(cleaned_lines).strip()
+
+
+def ensure_title_language(db: Session, title: str, language: str, user_id: int = None) -> str:
+    """Đảm bảo tiêu đề khớp với ngôn ngữ được chọn. Nếu chọn 'vi' mà tiêu đề tiếng Anh -> tự dịch sang tiếng Việt."""
+    if not title or not title.strip():
+        return title
+    
+    lang_name = LANGUAGE_NAMES.get(language, "Vietnamese")
+    title_str = title.strip()
+    
+    if language == "vi":
+        # Kiểm tra tiêu đề có phải thuần chữ ASCII (không dấu tiếng Việt)
+        is_ascii_only = bool(re.match(r"^[a-zA-Z0-9\s\-\:\,\'\&\?\!\.\(\)]+$", title_str))
+        has_english_words = any(w in title_str.lower() for w in ["bags", "lids", "containers", "guide", "best", "top", "how to", "review", "vs", "tips", "tricks", "solutions"])
+        
+        if is_ascii_only and has_english_words:
+            logger.warning(f"Phát hiện tiêu đề tiếng Anh cho ngôn ngữ vi: '{title_str}', tiến hành dịch...")
+            try:
+                prompt = f"Translate this article title into natural, engaging {lang_name} for blogging/SEO. Output ONLY the translated title text in {lang_name}, nothing else:\nTitle: {title_str}"
+                translated, _ = smart_call(
+                    db,
+                    get_setting(db, "openrouter_model", DEFAULT_OR_MODEL, user_id=user_id),
+                    [{"role": "user", "content": prompt}],
+                    max_tokens=100,
+                    user_id=user_id,
+                )
+                cleaned = re.sub(r'^[TopicTitle\s\:\"]+', '', translated.strip()).strip(' "')
+                if cleaned and len(cleaned) > 3:
+                    logger.info(f"Đã dịch tiêu đề: '{title_str}' -> '{cleaned}'")
+                    return cleaned
+            except Exception as e:
+                logger.warning(f"Lỗi dịch tiêu đề: {e}")
+                
+    return title_str
 
 
 
@@ -1611,6 +1661,7 @@ IMPORTANT: All content must reflect {current_year} as the current year.
     )
 
     title = meta.get("title") or title_hint or cluster_name
+    title = ensure_title_language(db, title, language, user_id=user_id)
 
     return {
         "title":        title,
@@ -1692,7 +1743,10 @@ Output format:
         current_date_str, preferred, user_id=user_id,
     )
 
+    final_title = meta.get("title") or title_hint or title
+    final_title = ensure_title_language(db, final_title, language, user_id=user_id)
+
     return {
-        "title":   meta.get("title") or title_hint or title,
+        "title":   final_title,
         "content": html_content,
     }

@@ -1268,6 +1268,20 @@ _BROKEN_PHRASES = [
     "language must remain",
     "return only valid json",
     "return only a valid json",
+    "we need to continue",
+    "the assistant wrote",
+    "got cut off",
+    "output only the remaining html",
+    "previous assistant message",
+    "must use exact name",
+    "answer box which is",
+    "must embed",
+    "must use vietnamese",
+    "persona name in vietnamese",
+    "must not repeat anything",
+    "completing the article through",
+    "[tên tác giả]",
+    "[author's name]",
 ]
 
 
@@ -1276,11 +1290,16 @@ def _is_broken_content(content: str) -> bool:
     if not content or len(content) < 50:
         return True
     low = content.lower().strip()
-    # Nội dung bài viết thật phải bắt đầu bằng HTML tag
-    if not low.startswith("<"):
-        for phrase in _BROKEN_PHRASES:
-            if phrase in low[:2000]:
-                return True
+    
+    # 1. Thẻ thinking tags do AI tự xuất
+    if "<think>" in low or "[thinking]" in low:
+        return True
+        
+    # 2. Kiểm tra từ khóa rác prompt leak xuất hiện trong nội dung bài (kể cả khi nằm trong tag HTML)
+    for phrase in _BROKEN_PHRASES:
+        if phrase in low:
+            return True
+
     return False
 
 
